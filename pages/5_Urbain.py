@@ -4,12 +4,11 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from shapely.geometry import MultiPolygon, Point, Polygon
 
 st.set_page_config(page_title="Hélio – Urbain", page_icon="🏙️", layout="wide")
 
 from core import ui, zones  # noqa: E402
-from core.config import LCZ_TILES_MAXZOOM, LCZ_TILES_URL  # noqa: E402
+from core.maps import disk_trace, layout_map, outline, site_marker  # noqa: E402
 from core.sources import bdnb  # noqa: E402
 from core.sources import cerema_lcz as lcz  # noqa: E402
 
@@ -35,45 +34,6 @@ def load_lcz(code: str, mtime: float) -> gpd.GeoDataFrame:  # mtime : relit apr�
 @st.cache_data(show_spinner=False)
 def load_bdnb(lat: float, lon: float, radius: int, mtime: float) -> gpd.GeoDataFrame:
     return bdnb.load(lat, lon, radius)
-
-
-# --------------------------------------------------------------------------- #
-# Aides cartographiques (plotly, fonds MapLibre sans jeton)
-# --------------------------------------------------------------------------- #
-def outline(geom) -> tuple[list, list]:
-    """Contours extérieurs d'un (multi)polygone, séparés par None pour plotly."""
-    lons, lats = [], []
-    polys = geom.geoms if isinstance(geom, MultiPolygon) else [geom] if isinstance(geom, Polygon) else []
-    for p in polys:
-        x, y = p.exterior.xy
-        lons += list(x) + [None]
-        lats += list(y) + [None]
-    return lons, lats
-
-
-def disk_wgs84(lat: float, lon: float, radius: float):
-    pt = gpd.GeoSeries([Point(lon, lat)], crs="EPSG:4326")
-    return pt.to_crs(pt.estimate_utm_crs()).buffer(radius).to_crs("EPSG:4326").iloc[0]
-
-
-def site_marker(site: dict) -> go.Scattermap:
-    return go.Scattermap(lat=[site["lat"]], lon=[site["lon"]], mode="markers",
-                         marker=dict(size=13, color="#1f4e8c"), name="Site",
-                         hovertext=[site["label"]], hoverinfo="text")
-
-
-def layout_map(fig: go.Figure, lat: float, lon: float, zoom: float, height: int = 520,
-               tiles: bool = False) -> go.Figure:
-    layers = []
-    if tiles:  # tuiles LCZ nationales du Cerema (servies jusqu'au zoom 14)
-        layers.append(dict(sourcetype="raster", source=[LCZ_TILES_URL], below="traces",
-                           opacity=0.65, maxzoom=LCZ_TILES_MAXZOOM + 1))
-    fig.update_layout(map=dict(style="carto-positron", center=dict(lat=lat, lon=lon), zoom=zoom,
-                               layers=layers),
-                      height=height, margin=dict(l=0, r=0, t=0, b=0),
-                      legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01,
-                                  bgcolor="rgba(255,255,255,0.8)"))
-    return fig
 
 
 # --------------------------------------------------------------------------- #
@@ -157,7 +117,7 @@ if not zone_terr.empty or site:
     else:
         xmin, ymin, xmax, ymax = zone_terr.total_bounds
         center, zoom = ((ymin + ymax) / 2, (xmin + xmax) / 2), 8.5
-    st.plotly_chart(layout_map(fig, *center, zoom=zoom, height=450, tiles=True))
+    st.plotly_chart(layout_map(fig, *center, zoom=zoom, height=450, lcz_tiles=True))
     st.caption("Fond : LCZ du Cerema (tuiles nationales, visibles jusqu'au zoom 14 ; "
                "au-delà, voir la carte du site plus bas). Traits bleus : territoires couverts.")
     leg = " · ".join(f"<span style='color:{col}'>■</span> {code} {lib}"
@@ -291,9 +251,7 @@ if has_lcz or bat is not None:
             marker=dict(opacity=0.85, line=dict(width=0.5, color="#333")), name="Bâtiments (hauteur)",
             colorbar=dict(title="hauteur (m)", thickness=12, len=0.5, x=0.99),
             hovertext=hover, hoverinfo="text"))
-    lons, lats = outline(disk_wgs84(lat, lon, radius))
-    fig.add_trace(go.Scattermap(lon=lons, lat=lats, mode="lines", line=dict(width=2, color="#1f4e8c"),
-                                name=f"Rayon {radius} m", hoverinfo="skip"))
+    fig.add_trace(disk_trace(lat, lon, radius))
     fig.add_trace(site_marker(site))
     zoom = {50: 18, 100: 17, 150: 16.5, 200: 16, 300: 15.5, 500: 14.8}[radius]
     st.plotly_chart(layout_map(fig, lat, lon, zoom=zoom, height=560))

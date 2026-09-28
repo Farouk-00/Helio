@@ -27,4 +27,7 @@ BDNB_API = "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet"
 # Géocodage d'adresses (Géoplateforme IGN, remplace api-adresse.data.gouv.fr)
 GEOCODAGE_URL = "https://data.geopf.fr/geocodage/search"
 
+# Planetary Computer (Microsoft) : catalogue STAC, sans clé (URL signées automatiquement)
+PC_STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
+
 HTTP_TIMEOUT = 120

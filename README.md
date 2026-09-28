@@ -28,6 +28,7 @@ Le site s'ouvre dans le navigateur (http://localhost:8501).
    suivantes sont instantanées.
 4. Onglet **Urbain** → choisis un **site** (adresse ou coordonnées) → télécharge
    le territoire LCZ qui le contient, puis les bâtiments BDNB autour.
+5. Onglet **Satellite** → même site → télécharge les étés Landsat (≈ 30 s par été).
 
 ## Structure
 
@@ -38,6 +39,7 @@ core/config.py              chemins, identifiants des jeux de données
 core/zones.py               départements métropole + outre-mer
 core/ui.py                  sélecteurs partagés (zone, site étudié)
 core/net.py                 téléchargement en flux, requêtes avec reprises
+core/maps.py                cartes plotly partagées (site, rayon, image raster)
 core/sources/               un module par source (télécharger / convertir / lire)
 data/raw, data/processed    stockage local (non versionné)
 ```

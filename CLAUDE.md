@@ -35,8 +35,8 @@ Lancement : `python -m streamlit run Accueil.py`
 | Onglet | État | Sources |
 |---|---|---|
 | Stations | ✅ testé sur données réelles (dép. 13, `latest`) | Météo-France climatologie horaire (data.gouv) |
-| Urbain | ✅ codé (branche `urbain-lcz-bdnb`), BDNB testé en réel, LCZ testé sur zip fictif | LCZ Cerema, BDNB (sans clé) |
-| Satellite | à faire | Landsat via Planetary Computer, Sentinel-2/3 via openEO |
+| Urbain | ✅ testé par Foucault, fusionné dans `main` | LCZ Cerema, BDNB (sans clé) |
+| Satellite | ✅ Landsat codé et testé en réel (branche `satellite-landsat`) ; Sentinel-3 nuit à faire | Landsat via Planetary Computer, Sentinel-2/3 via openEO |
 | AROME / ARPEGE | à faire | API ciblée Modèles Météo-France (clé requise) |
 | ERA5 | à faire | Copernicus CDS (`~/.cdsapirc`) |
 | Croisement | à faire | clic sur un point → toutes les variables → table d'entrée modèle |
@@ -51,7 +51,9 @@ Lancement : `python -m streamlit run Accueil.py`
 - LCZ : structure réelle du zip Cerema (nom du shapefile, nom de la colonne de classe, sens des
   champs `hre, are, bur, ror, bsr, war, ver, vhr`). Le code choisit le plus gros `.shp` nommé
   `*lcz*` et la première colonne dont les valeurs se décodent en classe LCZ.
-- Rendu des cartes plotly (MapLibre) de l'onglet Urbain : non vérifiable depuis le cloud.
+- Rendu des cartes plotly (MapLibre) : non vérifiable depuis le cloud (Urbain validé en local).
+- Landsat : dans le composite de Marseille, le Vieux-Port ressort masqué (NaN) ; à comprendre
+  (bits `qa_pixel` sur l'eau ?) si on veut l'eau.
 
 ## Décisions prises
 - Langage : Python + Streamlit. Stockage local Parquet/NetCDF, déploiement plus tard sur
@@ -96,6 +98,9 @@ Lancement : `python -m streamlit run Accueil.py`
 - **Landsat 8/9 C2 L2** : LST 30 m, `ST_B10 × 0.00341802 + 149` (K), passage ~10h30 UTC,
   pas de nuit, 8 j combinés. Gratuit via **Planetary Computer** (`landsat-c2-l2`,
   bande `lwir11`). **Earth Engine = payant en usage commercial.**
+  Vérifié : STAC sans clé (`pystac-client` + `planetary_computer.sign_inplace`), le filtre
+  `query` n'est pas supporté (filtrer nuages/plateforme côté client). Masque `qa_pixel` bits 0-5.
+  Marseille été 2025 : 18 scènes (≤ 30 % nuages), 17 dates exploitables, lecture ~26 s pour 1 km.
 - **Sentinel-2** : pas de bande thermique (NDVI 10 m). **Sentinel-3 SLSTR LST** : 1 km,
   jour + nuit, via **openEO** Copernicus (reprojection côté serveur).
 - **LCZ Cerema** : 93 territoires (dont DROM), zip par territoire (20-230 Mo) sur data.gouv
@@ -119,10 +124,9 @@ Lancement : `python -m streamlit run Accueil.py`
 - **SIRENE** : prospects (BTP NAF 41-43, logistique NAF 52).
 
 ## Prochaines étapes
-1. ~~Stations sur de vraies données~~ (fait). Onglet Urbain : tester le vrai zip LCZ de
-   Marseille, puis fusionner la branche `urbain-lcz-bdnb`.
+1. ~~Stations~~, ~~Urbain~~ (faits). Satellite : tester en local puis fusionner
+   `satellite-landsat`. Sentinel-3 LST nuit (openEO, compte Copernicus) plus tard.
 2. Géocodage : Géoplateforme (`data.geopf.fr/geocodage/search`), api-adresse est en fin de vie.
-3. Onglet Satellite (Landsat médiane estivale).
 4. AROME/ARPEGE (clé portail), ERA5 (clé CDS).
 5. Croisement → Modèle (cible : T au site ; features : météo de référence + fiche statique
    du site ; validation par station exclue).

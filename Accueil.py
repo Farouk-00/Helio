@@ -29,7 +29,7 @@ st.markdown(
 | **Stations** | Météo-France, climatologie horaire (data.gouv) | ✅ disponible |
 | **AROME / ARPEGE** | Portail API Météo-France (clé requise) | à venir |
 | **ERA5** | Copernicus CDS (clé requise) | à venir |
-| **Satellite** | Landsat (Planetary Computer), Sentinel (Copernicus) | à venir |
+| **Satellite** | Landsat 8/9 (Planetary Computer) : température de surface d'été | ✅ disponible |
 | **Urbain** | LCZ Cerema, BDNB (bâtiments autour d'un site) | ✅ disponible |
 | **Croisement** | Toutes les sources, en un point | à venir |
 | **Modèle** | LightGBM, validation par station exclue | à venir |
