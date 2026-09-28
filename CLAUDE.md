@@ -34,18 +34,24 @@ Lancement : `python -m streamlit run Accueil.py`
 ### État des onglets
 | Onglet | État | Sources |
 |---|---|---|
-| Stations | ✅ codé, testé sur données fictives seulement | Météo-France climatologie horaire (data.gouv) |
-| Urbain | prochain | LCZ Cerema, BDNB (sans clé) |
+| Stations | ✅ testé sur données réelles (dép. 13, `latest`) | Météo-France climatologie horaire (data.gouv) |
+| Urbain | ✅ codé (branche `urbain-lcz-bdnb`), BDNB testé en réel, LCZ testé sur zip fictif | LCZ Cerema, BDNB (sans clé) |
 | Satellite | à faire | Landsat via Planetary Computer, Sentinel-2/3 via openEO |
 | AROME / ARPEGE | à faire | API ciblée Modèles Météo-France (clé requise) |
 | ERA5 | à faire | Copernicus CDS (`~/.cdsapirc`) |
 | Croisement | à faire | clic sur un point → toutes les variables → table d'entrée modèle |
 | Modèle | à faire | LightGBM, validation par station exclue + split temporel |
 
-### À vérifier au premier vrai run (non testable jusqu'ici)
-- Catalogue data.gouv du jeu horaire (id `6569b4473bedf2e7abad3b72`) : noms de fichiers
-  supposés `H_<dep>_<periode>.csv.gz` (regex dans `meteofrance_stations.py`).
-- Format numérique des CSV (séparateur `;`, décimale supposée `.`, repli `,` géré).
+### Vérifié sur données réelles (09/2026)
+- Stations : noms `H_<dep>_<periode>.csv.gz` et décimale `.` confirmés (dép. 13, `latest-2025-2026` :
+  20 stations, 258 k lignes, 11 Mo -> 2,5 Mo Parquet). `GLO` : 1 station sur 20, tout en code 9.
+  Le fichier `latest` s'arrêtait au 24/06/2026 (fin septembre 2026).
+
+### À vérifier au premier vrai run
+- LCZ : structure réelle du zip Cerema (nom du shapefile, nom de la colonne de classe, sens des
+  champs `hre, are, bur, ror, bsr, war, ver, vhr`). Le code choisit le plus gros `.shp` nommé
+  `*lcz*` et la première colonne dont les valeurs se décodent en classe LCZ.
+- Rendu des cartes plotly (MapLibre) de l'onglet Urbain : non vérifiable depuis le cloud.
 
 ## Décisions prises
 - Langage : Python + Streamlit. Stockage local Parquet/NetCDF, déploiement plus tard sur
@@ -92,12 +98,19 @@ Lancement : `python -m streamlit run Accueil.py`
   bande `lwir11`). **Earth Engine = payant en usage commercial.**
 - **Sentinel-2** : pas de bande thermique (NDVI 10 m). **Sentinel-3 SLSTR LST** : 1 km,
   jour + nuit, via **openEO** Copernicus (reprojection côté serveur).
-- **LCZ Cerema** : 93 territoires (dont DROM), shapefile Lambert-93 (EPSG:2154) + raster
-  1,5 m ; champs `lcz, lcz_int, hre, are, bur, ror, bsr, war, ver, vhr` (hauteur, rapport
+- **LCZ Cerema** : 93 territoires (dont DROM), zip par territoire (20-230 Mo) sur data.gouv
+  (jeu `6641c562e5acdb35c0e6051d`), shapefile Lambert-93 (EPSG:2154) + raster 1,5 m ; champs `lcz, lcz_int, hre, are, bur, ror, bsr, war, ver, vhr` (hauteur, rapport
   H/L, part bâtie, imperméable, sol nu, eau, végétation, végétation haute – à confirmer).
+  Service ArcGIS public du Cerema (`cartagene.cerema.fr/server/rest/services/Hosted/…`) :
+  `aires_urbaines_3857` (93 contours + lien data.gouv, requêtable), `statistiques_commune_3857`
+  (part de chaque LCZ par commune, 34 955 communes), tuiles nationales `l_lcz_spot_000_2022_tl`
+  (PNG, **zoom ≤ 14** seulement). Pas de LCZ 10 en France.
 - **Sat4BDNB** : indicateurs ICU par **IRIS**, été 2022 (1/06–31/08), **licence ODbL**
   (attention redistribution), + scénarios végétation/albédo (2026).
 - **BDNB** (millésime 2026-02.a) : fiche par bâtiment (DPE, matériaux, hauteur, usage).
+  API ouverte `api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet` (PostgREST, ~140 colonnes) :
+  **sans clé, 10 lignes par requête et 120 requêtes/min** ; `/bbox?xmin&ymin&xmax&ymax` en
+  **Lambert-93** ; `Prefer: count=exact` donne le total. **Aucun bâtiment outre-mer** (971, 974).
   Surtout résidentiel/tertiaire. **BD TOPO** : environnement (routes, végétation, tous
   bâtiments) – plus tard. DPE ADEME brut : contient l'**indicateur de confort d'été**.
 - **Santé** : décès quotidiens INSEE (département) et fichier individuel (commune × jour,
@@ -106,8 +119,9 @@ Lancement : `python -m streamlit run Accueil.py`
 - **SIRENE** : prospects (BTP NAF 41-43, logistique NAF 52).
 
 ## Prochaines étapes
-1. Faire tourner l'onglet Stations sur de vraies données (dép. 13, période `latest`).
-2. Onglet Urbain (LCZ + BDNB).
+1. ~~Stations sur de vraies données~~ (fait). Onglet Urbain : tester le vrai zip LCZ de
+   Marseille, puis fusionner la branche `urbain-lcz-bdnb`.
+2. Géocodage : Géoplateforme (`data.geopf.fr/geocodage/search`), api-adresse est en fin de vie.
 3. Onglet Satellite (Landsat médiane estivale).
 4. AROME/ARPEGE (clé portail), ERA5 (clé CDS).
 5. Croisement → Modèle (cible : T au site ; features : météo de référence + fiche statique

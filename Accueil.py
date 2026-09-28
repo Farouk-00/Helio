@@ -30,7 +30,7 @@ st.markdown(
 | **AROME / ARPEGE** | Portail API Météo-France (clé requise) | à venir |
 | **ERA5** | Copernicus CDS (clé requise) | à venir |
 | **Satellite** | Landsat (Planetary Computer), Sentinel (Copernicus) | à venir |
-| **Urbain** | LCZ Cerema, BDNB | à venir |
+| **Urbain** | LCZ Cerema, BDNB (bâtiments autour d'un site) | ✅ disponible |
 | **Croisement** | Toutes les sources, en un point | à venir |
 | **Modèle** | LightGBM, validation par station exclue | à venir |
 """

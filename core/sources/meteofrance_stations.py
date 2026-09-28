@@ -21,6 +21,7 @@ import requests
 
 from core.config import (DATAGOUV_API, DATASET_HORAIRE_ID, HTTP_TIMEOUT,
                          PROCESSED_DIR, RAW_DIR)
+from core.net import download
 
 RAW = RAW_DIR / "stations_horaires"
 PROC = PROCESSED_DIR / "stations_horaires"
@@ -107,23 +108,6 @@ def parquet_path(departement: str, periode: str) -> Path:
 
 def is_ready(departement: str, periode: str) -> bool:
     return parquet_path(departement, periode).exists()
-
-
-def download(url: str, dest: Path, progress=None) -> Path:
-    """Téléchargement en flux ; progress(fraction) est optionnel."""
-    tmp = dest.with_suffix(dest.suffix + ".part")
-    with requests.get(url, stream=True, timeout=HTTP_TIMEOUT) as r:
-        r.raise_for_status()
-        total = int(r.headers.get("content-length", 0))
-        done = 0
-        with open(tmp, "wb") as f:
-            for chunk in r.iter_content(1 << 20):
-                f.write(chunk)
-                done += len(chunk)
-                if progress and total:
-                    progress(min(done / total, 1.0))
-    tmp.rename(dest)
-    return dest
 
 
 def csv_to_parquet(src: Path, dest: Path) -> pd.DataFrame:

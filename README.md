@@ -26,6 +26,8 @@ Le site s'ouvre dans le navigateur (http://localhost:8501).
    `latest-…`, la plus légère) → **Télécharger**.
 3. Le fichier est converti en Parquet dans `data/processed/` : les visites
    suivantes sont instantanées.
+4. Onglet **Urbain** → choisis un **site** (adresse ou coordonnées) → télécharge
+   le territoire LCZ qui le contient, puis les bâtiments BDNB autour.
 
 ## Structure
 
@@ -34,7 +36,8 @@ Accueil.py                  page d'accueil
 pages/                      un fichier par onglet
 core/config.py              chemins, identifiants des jeux de données
 core/zones.py               départements métropole + outre-mer
-core/ui.py                  sélecteur de zone partagé
+core/ui.py                  sélecteurs partagés (zone, site étudié)
+core/net.py                 téléchargement en flux, requêtes avec reprises
 core/sources/               un module par source (télécharger / convertir / lire)
 data/raw, data/processed    stockage local (non versionné)
 ```
