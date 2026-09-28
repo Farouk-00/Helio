@@ -127,6 +127,6 @@ Lancement : `python -m streamlit run Accueil.py`
 1. ~~Stations~~, ~~Urbain~~ (faits). Satellite : tester en local puis fusionner
    `satellite-landsat`. Sentinel-3 LST nuit (openEO, compte Copernicus) plus tard.
 2. Géocodage : Géoplateforme (`data.geopf.fr/geocodage/search`), api-adresse est en fin de vie.
-4. AROME/ARPEGE (clé portail), ERA5 (clé CDS).
-5. Croisement → Modèle (cible : T au site ; features : météo de référence + fiche statique
+3. AROME/ARPEGE (clé portail), ERA5 (clé CDS).
+4. Croisement → Modèle (cible : T au site ; features : météo de référence + fiche statique
    du site ; validation par station exclue).
