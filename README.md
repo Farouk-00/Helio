@@ -33,7 +33,10 @@ Le site s'ouvre dans le navigateur (http://localhost:8501).
    séries, comparaison avec une station, export EPW d'une année complète.
 7. Onglet **AROME / ARPEGE** → clés `METEOFRANCE_AROME_KEY` / `METEOFRANCE_ARPEGE_KEY` dans
    `~/.zshrc` → run, variables, horizon → prévision au site (chaque run est archivé).
-8. Onglet **Croisement** → une station (cible connue) ou un site → état des sources,
+8. Onglet **Modèle** → préparer les stations (ERA5, BDNB, Sentinel-2…) → construire le jeu →
+   entraîner et valider → prédire au site. Long : aussi en terminal (`python -m core.model --help`).
+   LightGBM sur Mac : `brew install libomp` (sinon repli automatique sur scikit-learn).
+9. Onglet **Croisement** → une station (cible connue) ou un site → état des sources,
    fiche fixe, table horaire, « Enregistrer pour le modèle » (`data/processed/croisement/`).
 
 ## Structure
@@ -48,6 +51,7 @@ core/net.py                 téléchargement en flux, requêtes avec reprises
 core/maps.py                cartes plotly partagées (site, rayon, image raster)
 core/epw.py                 écriture de fichiers météo EPW (EnergyPlus, UWG)
 core/features.py            croisement : fiche fixe + table horaire d'un site (entrée du modèle)
+core/model.py               jeu multi-stations, entraînement, validation, prédiction (+ CLI)
 core/sources/               un module par source (télécharger / convertir / lire)
 data/raw, data/processed    stockage local (non versionné)
 prototypes/                 études ponctuelles (ex. UWG Marseille), hors application

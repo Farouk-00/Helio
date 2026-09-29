@@ -32,7 +32,7 @@ st.markdown(
 | **Satellite** | Landsat 8/9 (Planetary Computer) : température de surface d'été | ✅ disponible |
 | **Urbain** | LCZ Cerema, BDNB (bâtiments autour d'un site) | ✅ disponible |
 | **Croisement** | Toutes les sources en un point : fiche fixe + table horaire (entrée du modèle) | ✅ disponible |
-| **Modèle** | LightGBM, validation par station exclue | à venir |
+| **Modèle** | LightGBM (ou scikit-learn), validation par stations exclues + test temporel, prédiction au site | ✅ disponible |
 """
 )
 

@@ -37,10 +37,10 @@ Lancement : `python -m streamlit run Accueil.py`
 | Stations | ✅ testé sur données réelles (dép. 13, `latest`) | Météo-France climatologie horaire (data.gouv) |
 | Urbain | ✅ testé par Foucault, fusionné dans `main` | LCZ Cerema, BDNB (sans clé) |
 | Satellite | ✅ Landsat testé par Foucault, fusionné dans `main` ; Sentinel-3 nuit à faire | Landsat via Planetary Computer, Sentinel-2/3 via openEO |
-| AROME / ARPEGE | ✅ codé (branche `arome-arpege`), testé avec un faux serveur WCS ; diagnostic réel à lancer | API ciblée Modèles (clés `METEOFRANCE_AROME_KEY`, `METEOFRANCE_ARPEGE_KEY`, en-tête `apikey`) |
+| AROME / ARPEGE | ✅ fusionné, testé en réel par Foucault (T, HR, rayonnement, pluie) | API ciblée Modèles (clés `METEOFRANCE_AROME_KEY`, `METEOFRANCE_ARPEGE_KEY`, en-tête `apikey`) |
 | ERA5 | ✅ fusionné, clé CDS de Foucault en place | Copernicus CDS (`~/.cdsapirc`), jeux « time-series » |
 | Croisement | ✅ fusionné : fiche fixe + table horaire, export pour le modèle | toutes les sources + altitude IGN, distance à la mer IGN, NDVI Sentinel-2 |
-| Modèle | à faire | LightGBM, validation par station exclue + split temporel |
+| Modèle | ✅ codé (branche `modele`), chaîne testée (ERA5 simulé) ; à lancer avec le vrai ERA5 | LightGBM (repli scikit-learn), cible = T station − ERA5, stations exclues + test temporel |
 
 ### Vérifié sur données réelles (09/2026)
 - Stations : `GLO` à l'horodatage HH UTC = cumul de HH-1 à HH (profil diurne de Marignane,
@@ -57,10 +57,6 @@ Lancement : `python -m streamlit run Accueil.py`
 - Rendu des cartes plotly (MapLibre) : non vérifiable depuis le cloud (Urbain validé en local).
 - Landsat : dans le composite de Marseille, le Vieux-Port ressort masqué (NaN) ; à comprendre
   (bits `qa_pixel` sur l'eau ?) si on veut l'eau.
-- AROME / ARPEGE (lancer `python -m core.sources.meteofrance_nwp`) : écriture de l'heure du run
-  dans les identifiants (`T00.00.00Z` ou `T00:00:00Z`, les deux sont gérés), axe des échéances dans
-  DescribeCoverage (décalages en secondes supposés, dates ISO gérées aussi), noms des couvertures
-  rayonnement / pluie (`…_PT1H`), unités renvoyées en GeoTIFF (K ? J/m² ?).
 - ERA5 (premier téléchargement réel) : forme exacte du CSV renvoyé par les jeux « time-series »
   (un CSV ou un zip, noms courts `t2m` ou longs), et si ERA5-Land y est cumulé depuis 00 UTC.
   Le lecteur gère tous ces cas (tests synthétiques) et détecte le cumul sur `strd`.
@@ -74,6 +70,18 @@ Lancement : `python -m streamlit run Accueil.py`
   (écart ~1 km : Marseille-Obs 3,5 km contre 2,0 km avec l'IGN).
 - Croisement Marseille-Obs (JJA 2025 + 2026) : RMSE station voisine 1,91 °C, ERA5 1,74 °C
   (ERA5 simulé dans le test local, à refaire avec le vrai ERA5).
+
+- AROME / ARPEGE (diagnostic réel du 29/09/2026) : 5 610 couvertures AROME (46 paramètres), 4 621 ARPEGE
+  (94) ; heure du run écrite `T03.00.00Z` ; runs AROME toutes les 3 h, 52 échéances (+51 h) ; le run
+  le plus récent est publié progressivement (ARPEGE 06 h : 1 seule échéance au moment du test).
+  Cumuls `PT1H` présents pour rayonnement et pluie (aussi PT3H… P1D, P2D). Rayonnement en J/m² sur
+  l'heure : ~640 W/m² à 12 h UTC fin septembre à Marseille, cohérent.
+- Environnement de Foucault : `pip` pointait sur le Python système 3.9 (paquets en site utilisateur) ;
+  LightGBM sur Mac exige `brew install libomp` (la roue n'embarque pas OpenMP).
+
+### Test de la chaîne Modèle (ERA5 simulé = moyenne régionale, 13, 2025)
+- 19 stations, 164 k lignes, 23 variables ; préparation BDNB + Sentinel-2 réelle : 170 s au total.
+- Scores **non significatifs** (ERA5 simulé) ; à refaire avec le vrai ERA5-Land.
 
 ### Prototype UWG (09/2026) – voir `prototypes/uwg_marseille/README.md`
 - Marignane -> Marseille-Observatoire, JJA 2025, sans calage : RMSE horaire = référence naïve
@@ -159,11 +167,12 @@ Lancement : `python -m streamlit run Accueil.py`
 - **SIRENE** : prospects (BTP NAF 41-43, logistique NAF 52).
 
 ## Prochaines étapes
-1. ~~Stations~~, ~~Urbain~~, ~~Satellite~~, ~~ERA5 + UWG~~, ~~Croisement~~ (fusionnés).
-   AROME / ARPEGE : branche `arome-arpege`, diagnostic réel puis fusion. Sentinel-3 plus tard.
+1. ~~Stations~~, ~~Urbain~~, ~~Satellite~~, ~~ERA5 + UWG~~, ~~Croisement~~, ~~AROME / ARPEGE~~ (fusionnés).
+   Modèle : branche `modele`, premier entraînement réel sur le 13 (vrai ERA5-Land 2025).
 2. Géocodage : Géoplateforme (`data.geopf.fr/geocodage/search`), api-adresse est en fin de vie.
 3. AROME-OM (outre-mer) ; archivage automatique des runs (tâche planifiée) ; UWG forcé par
    ERA5-Land sur d'autres villes.
-4. Modèle : cible = T au site ; features = météo de référence + fiche du site (`core/features.py`) ;
-   boucle sur les stations d'un ou plusieurs départements (téléchargements par station à
-   automatiser : BDNB, Landsat, Sentinel-2, LCZ) ; validation par station exclue + split temporel.
+4. Prévision J+1/J+2 : appliquer le modèle avec AROME comme météo de fond (écart de distribution
+   ERA5 -> AROME à mesurer : réentraîner sur l'archive AROME dès qu'elle est assez longue).
+5. Plus de stations (départements voisins, réseaux urbains type Météo Marseille / Montpellier) ;
+   variables UWG (écart UWG − rural) et Landsat / LCZ dans le jeu.
