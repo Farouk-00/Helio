@@ -14,6 +14,11 @@ def catalog(model: str) -> pd.DataFrame:
     return nwp.capabilities(model)
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def run_info(model: str, run: pd.Timestamp) -> dict:
+    return nwp.run_info(model, catalog(model), run)
+
+
 @st.cache_data(show_spinner=False)
 def load(model: str, lat: float, lon: float, mtime: float) -> pd.DataFrame:  # mtime : relit après ajout
     return nwp.load(model, lat, lon)
@@ -60,11 +65,16 @@ have = set(pd.to_datetime(archive["run"]).unique()) if not archive.empty else se
 
 with st.expander("📥 Télécharger un run", expanded=archive.empty):
     c1, c2, c3 = st.columns([2, 2, 1])
-    run = c1.selectbox("Run", run_list, format_func=lambda r: f"{r:%d/%m/%Y %H} h UTC"
-                       + (" ✅ en local" if r in have else ""))
+    infos = {r: run_info(model, r) for r in run_list[:4]}  # 4 requêtes, gardées 10 min
+    complet = next((i for i, r in enumerate(run_list[:4]) if infos[r]["n"] > 1), 0)
+    run = c1.selectbox("Run", run_list, index=complet, format_func=lambda r: f"{r:%d/%m/%Y %H} h UTC"
+                       + (f" – {infos[r]['n']} échéances" if r in infos else "")
+                       + (" ✅ en local" if r in have else ""),
+                       help="Le run le plus récent est publié progressivement : par défaut, le dernier run "
+                            "qui a plus d'une échéance.")
     variables = c2.multiselect("Variables", list(nwp.VARIABLES), default=["T", "RH"],
                                format_func=nwp.LIBELLES.get)
-    max_h = 48 if model == "arome" else 102
+    max_h = max(1, infos[run]["derniere_h"]) if run in infos else (51 if model == "arome" else 102)
     horizon = c3.number_input("Horizon (h)", 1, max_h, min(48, max_h))
     n_req = len(variables) * (horizon + 1)
     st.caption(f"Environ {n_req} requêtes, soit ~{n_req * nwp.PAUSE_S / 60:.0f} min (50 requêtes/minute au "

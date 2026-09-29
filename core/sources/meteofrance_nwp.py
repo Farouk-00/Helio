@@ -124,6 +124,22 @@ def runs(cat: pd.DataFrame) -> list[pd.Timestamp]:
     return sorted(t["run"].unique(), reverse=True)
 
 
+def run_info(model: str, cat: pd.DataFrame, run: pd.Timestamp) -> dict:
+    """Échéances publiées pour la température à 2 m d'un run : {n, derniere (h)}."""
+    cid = coverage_for(cat, "T", run)
+    times = describe(model, cid)["times"] if cid else []
+    last = max(((t - run) / pd.Timedelta(hours=1) for t in times), default=0)
+    return {"n": len(times), "derniere_h": int(round(last))}
+
+
+def _suffix_hours(suffix: str) -> float:
+    """'PT1H' -> 1, 'PT12H' -> 12, 'P1D' -> 24 ; inconnu -> inf."""
+    m = re.fullmatch(r"P(?:(\d+)D)?(?:T(\d+)H)?", suffix.upper())
+    if not m or not any(m.groups()):
+        return float("inf")
+    return int(m.group(1) or 0) * 24 + int(m.group(2) or 0)
+
+
 # --------------------------------------------------------------------------- #
 # Axes d'une couverture (échéances, hauteurs)
 # --------------------------------------------------------------------------- #
@@ -271,23 +287,28 @@ def _diag() -> None:  # pragma: no cover - outil manuel
             continue
         try:
             cat = capabilities(model)
-            print(f"{len(cat)} couvertures, {cat['param'].nunique()} paramètres, runs : "
-                  + ", ".join(f"{r:%d/%m %Hh}" for r in runs(cat)[:6]))
+            rl = runs(cat)
+            print(f"{len(cat)} couvertures, {cat['param'].nunique()} paramètres")
+            for r in rl[:3]:
+                info = run_info(model, cat, r)
+                print(f"  run {r:%d/%m %Hh} : {info['n']} échéances, jusqu'à +{info['derniere_h']} h")
+                time.sleep(PAUSE_S)
             for var, (prefix, h, cumul) in VARIABLES.items():
-                hits = cat[cat["param"].str.contains(prefix.split("__")[0], regex=False)]
-                print(f"  {var}: {'OK' if (hits['param'] == prefix).any() else 'ABSENT'}  "
-                      f"variantes : {sorted(hits['param'].unique())[:4]}  suffixes : {sorted(hits['suffix'].unique())[:4]}")
-            run = runs(cat)[0]
-            cid = coverage_for(cat, "T", run)
-            axes = describe(model, cid)
-            print(f"  {cid} : {len(axes['times'])} échéances "
-                  f"({axes['times'][0] if axes['times'] else '?'} -> {axes['times'][-1] if axes['times'] else '?'}), "
-                  f"hauteurs {axes['heights'][:6]}")
-            t = axes["times"][min(12, len(axes["times"]) - 1)]
-            v = value_at(model, cid, t, lat, lon, 2)
-            print(f"  T2m brute à Marseille-Obs le {t} : {v}")
-            gid = coverage_for(cat, "GHI", run)
-            print(f"  rayonnement : {gid}")
+                sub = cat[cat["param"] == prefix]
+                suf = sorted(sub["suffix"].unique(), key=_suffix_hours)
+                print(f"  {var}: {'OK' if len(sub) else 'ABSENT'}  suffixes : {suf}")
+            run = next((r for r in rl if run_info(model, cat, r)["n"] > 1), rl[0])
+            for var in VARIABLES:
+                cid = coverage_for(cat, var, run)
+                if cid is None:
+                    print(f"  {var}: pas de couverture retenue pour le run {run:%d/%m %Hh}")
+                    continue
+                axes = describe(model, cid)
+                t = axes["times"][min(12, len(axes["times"]) - 1)]
+                v = value_at(model, cid, t, lat, lon, VARIABLES[var][1])
+                print(f"  {var}: {cid}  {len(axes['times'])} échéances ({axes['times'][0]} -> {axes['times'][-1]}),"
+                      f" hauteurs {axes['heights'][:4]} ; valeur brute le {t} : {v}")
+                time.sleep(PAUSE_S)
         except Exception as exc:
             print("ERREUR :", exc)
 
