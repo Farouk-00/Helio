@@ -13,3 +13,5 @@ pystac-client>=0.7
 planetary-computer>=1.0
 cdsapi>=0.7.2
 uwg>=5.8
+scikit-learn>=1.4
+lightgbm>=4.0
