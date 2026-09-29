@@ -39,7 +39,9 @@ PROC.mkdir(parents=True, exist_ok=True)
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 ERA5_DATASET = "era5-land"
-EXCLUDE = {"lat", "lon", "rayon_m", "rayon_sat_m", "T_cible", "station", "cible", "time_utc"}
+# jour_annee est exclu : avec une seule année, il laisse le modèle apprendre l'erreur d'ERA5 propre à
+# une date (vue sur les autres stations), information indisponible en prévision réelle.
+EXCLUDE = {"lat", "lon", "rayon_m", "rayon_sat_m", "T_cible", "station", "cible", "time_utc", "jour_annee"}
 HOT = 30.0  # °C : seuil des « heures chaudes » dans les scores
 
 
@@ -263,6 +265,36 @@ def temporal_holdout(df: pd.DataFrame, split: str, kind: str | None = None) -> d
     return {"split": split, "scores": score_table(te, pd.Series(pred, index=te.index), bias)}
 
 
+def spatiotemporal(df: pd.DataFrame, split: str, n_folds: int = 5, kind: str | None = None) -> dict | None:
+    """Test le plus exigeant : stations jamais vues ET période postérieure à l'entraînement.
+
+    Pour chaque pli : entraînement sur les autres stations avant `split`, test sur les stations
+    du pli après `split`. C'est la situation d'un nouveau client en prévision réelle.
+    """
+    from sklearn.model_selection import GroupKFold
+
+    kind = kind or backend()
+    cut = pd.Timestamp(split)
+    stations = df["station"].unique()
+    n_folds = max(2, min(n_folds, len(stations)))
+    preds, biases, tests = [], [], []
+    for k, (tr_st, te_st) in enumerate(GroupKFold(n_splits=n_folds).split(stations, groups=stations)):
+        tr = df[df["station"].isin(stations[tr_st]) & (df["time_utc"] < cut)]
+        te = df[df["station"].isin(stations[te_st]) & (df["time_utc"] >= cut)]
+        if len(tr) < 1000 or te.empty:
+            continue
+        cols = feature_columns(tr)
+        m = _new_model(kind, seed=k)
+        m.fit(_matrix(tr, cols), tr["T_cible"] - tr["era5_T"])
+        preds.append(pd.Series(te["era5_T"].to_numpy() + m.predict(_matrix(te, cols)), index=te.index))
+        biases.append(pd.Series((tr["T_cible"] - tr["era5_T"]).mean(), index=te.index))
+        tests.append(te)
+    if not tests:
+        return None
+    te = pd.concat(tests)
+    return {"split": split, "scores": score_table(te, pd.concat(preds), pd.concat(biases))}
+
+
 def fit_final(df: pd.DataFrame, zone: str, meta: dict, kind: str | None = None) -> Path:
     """Modèle final sur toutes les données, sauvegardé avec ses métadonnées."""
     kind = kind or backend()
@@ -327,7 +359,12 @@ def main() -> None:  # pragma: no cover - outil manuel
         if df.empty:
             raise SystemExit("Jeu d'entraînement vide (ERA5 manquant ?).")
         cv = cross_validate(df)
-        print(cv["scores"].round(2).to_string())
+        print("Stations exclues :\n" + cv["scores"].round(2).to_string())
+        t0, t1 = df["time_utc"].min(), df["time_utc"].max()
+        split = str((t0 + (t1 - t0) * 0.75).date())
+        stt = spatiotemporal(df, split)
+        if stt:
+            print(f"Stations exclues ET période après le {split} :\n" + stt["scores"].round(2).to_string())
         path = fit_final(df, a.zone, {"debut": a.debut, "fin": a.fin, "rayon": a.rayon,
                                       "stations": int(df["station"].nunique()), "heures": int(len(df))})
         print("Modèle enregistré :", path)

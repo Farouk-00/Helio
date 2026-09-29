@@ -79,9 +79,20 @@ Lancement : `python -m streamlit run Accueil.py`
 - Environnement de Foucault : `pip` pointait sur le Python système 3.9 (paquets en site utilisateur) ;
   LightGBM sur Mac exige `brew install libomp` (la roue n'embarque pas OpenMP).
 
-### Test de la chaîne Modèle (ERA5 simulé = moyenne régionale, 13, 2025)
-- 19 stations, 164 k lignes, 23 variables ; préparation BDNB + Sentinel-2 réelle : 170 s au total.
-- Scores **non significatifs** (ERA5 simulé) ; à refaire avec le vrai ERA5-Land.
+### Premier modèle réel (13, ERA5-Land 2025, 17 stations sur 19, LightGBM, 29/09/2026)
+RMSE °C, erreur = prévu − mesuré ; sans Landsat, LCZ manquante pour Arles, Istres, Eyragues.
+| périmètre | ERA5 brut | modèle (stations exclues) | modèle (test temporel oct.-déc.) |
+|---|---|---|---|
+| toutes les heures | 2,01 | 1,71 | 1,45 (ERA5 1,88) |
+| heures ≥ 30 °C | 3,05 | 2,39 | – |
+| Tmin journalière | 2,11 | 1,69 | 1,53 (ERA5 2,14) |
+| Tmax journalière | 2,45 | 1,90 | 1,13 (ERA5 2,08) |
+- ERA5 trop chaud la nuit (+0,5 °C), trop froid l'après-midi (−1,2 °C à 14 h) ; biais du modèle ~0 à toute heure.
+- Importance (gain) : era5_GHI >> jour_annee > era5_WS > lcz_ror > lcz_ver > era5_RH > era5_WD…
+- **Méthode, après ce run** : `jour_annee` retiré des variables (avec une seule année, il apprend
+  l'erreur d'ERA5 d'une date donnée, vue sur les autres stations : score « stations exclues »
+  optimiste). Ajout du test **stations exclues ET période future** (le plus honnête). Pour juger la
+  canicule : couper avant un été (ERA5 2026 + mesures jusqu'à fin juin 2026 → été 2026 à compléter).
 
 ### Prototype UWG (09/2026) – voir `prototypes/uwg_marseille/README.md`
 - Marignane -> Marseille-Observatoire, JJA 2025, sans calage : RMSE horaire = référence naïve
@@ -168,7 +179,8 @@ Lancement : `python -m streamlit run Accueil.py`
 
 ## Prochaines étapes
 1. ~~Stations~~, ~~Urbain~~, ~~Satellite~~, ~~ERA5 + UWG~~, ~~Croisement~~, ~~AROME / ARPEGE~~ (fusionnés).
-   Modèle : branche `modele`, premier entraînement réel sur le 13 (vrai ERA5-Land 2025).
+   Modèle : branche `modele-propre` (ne pas fusionner `modele`, qui contient un fichier de test) ;
+   relancer avec Landsat + LCZ complètes, lire le test stations exclues + période future.
 2. Géocodage : Géoplateforme (`data.geopf.fr/geocodage/search`), api-adresse est en fin de vie.
 3. AROME-OM (outre-mer) ; archivage automatique des runs (tâche planifiée) ; UWG forcé par
    ERA5-Land sur d'autres villes.

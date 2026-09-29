@@ -135,13 +135,16 @@ if st.button("Entraîner et valider", type="primary"):
         cv = model.cross_validate(df, n_folds, kind, log=st.write)
         st.write("Test temporel…")
         th = model.temporal_holdout(df, split.isoformat(), kind)
+        st.write("Test stations exclues + période future…")
+        stt = model.spatiotemporal(df, split.isoformat(), n_folds, kind)
         st.write("Modèle final sur toutes les données…")
         e = cv["pred"] - df["T_cible"]
         hourly = pd.DataFrame({"modèle": e, "ERA5 brut": df["era5_T"] - df["T_cible"]}).groupby(df["heure_locale"]).mean()
         res = {"kind": cv["kind"], "scores": cv["scores"].to_dict("records"),
                "par_station": cv["par_station"].to_dict("records"),
                "par_heure": hourly.reset_index().to_dict("records"),
-               "temporel": th["scores"].to_dict("records") if th else None, "coupure": split.isoformat()}
+               "temporel": th["scores"].to_dict("records") if th else None,
+               "spatiotemporel": stt["scores"].to_dict("records") if stt else None, "coupure": split.isoformat()}
         model.fit_final(df, zone, {"debut": str(df["time_utc"].min().date()), "fin": str(df["time_utc"].max().date()),
                                    "rayon": radius, "rayon_sat": radius_sat, "stations": int(df["station"].nunique()),
                                    "heures": int(len(df))}, kind)
@@ -152,13 +155,17 @@ if results_path(zone).exists():
     res = json.loads(results_path(zone).read_text())
     scores = pd.DataFrame(res["scores"])
     st.markdown(f"**Validation par stations exclues** ({res['kind']}) – RMSE en °C, erreur = prévu − mesuré")
-    piv = scores.pivot(index="périmètre", columns="prédicteur", values="RMSE")
-    st.dataframe(piv[["ERA5 brut", "ERA5 + biais moyen", "modèle"]].round(2))
+    def rmse_table(records):
+        t = pd.DataFrame(records).pivot(index="périmètre", columns="prédicteur", values="RMSE")
+        return t[["ERA5 brut", "ERA5 + biais moyen", "modèle"]].style.format(precision=2, na_rep="–")
+
+    st.dataframe(rmse_table(res["scores"]))
     with st.expander("Biais, MAE et effectifs"):
         st.dataframe(scores.round(2), hide_index=True)
     ps = pd.DataFrame(res["par_station"]).sort_values("RMSE ERA5")
-    fig = px.bar(ps.melt(id_vars=["nom"], value_vars=["RMSE ERA5", "RMSE modèle"], var_name="", value_name="RMSE (°C)"),
-                 x="nom", y="RMSE (°C)", color="", barmode="group")
+    fig = px.bar(ps.melt(id_vars=["nom"], value_vars=["RMSE ERA5", "RMSE modèle"], var_name="série",
+                         value_name="RMSE (°C)"),
+                 x="nom", y="RMSE (°C)", color="série", barmode="group")
     fig.update_layout(height=340, margin=dict(l=0, r=0, t=10, b=0), xaxis_title="")
     st.plotly_chart(fig)
     ph = pd.DataFrame(res["par_heure"]).melt(id_vars=["heure_locale"], var_name="prédicteur", value_name="biais (°C)")
@@ -167,10 +174,14 @@ if results_path(zone).exists():
     fig.update_layout(height=280, margin=dict(l=0, r=0, t=10, b=0), xaxis=dict(dtick=2, title="heure locale normale"))
     st.plotly_chart(fig)
     if res.get("temporel"):
-        tt = pd.DataFrame(res["temporel"])
         st.markdown(f"**Test temporel** (entraînement avant le {res['coupure']}, test après ; stations connues) – RMSE °C")
-        st.dataframe(tt.pivot(index="périmètre", columns="prédicteur", values="RMSE")
-                     [["ERA5 brut", "ERA5 + biais moyen", "modèle"]].round(2))
+        st.dataframe(rmse_table(res["temporel"]))
+    if res.get("spatiotemporel"):
+        st.markdown(f"**Test le plus exigeant : stations exclues ET période après le {res['coupure']}** "
+                    "(la situation d'un nouveau client en prévision) – RMSE °C")
+        st.dataframe(rmse_table(res["spatiotemporel"]))
+        st.caption("« – » : aucune heure dans ce périmètre sur la période testée (par exemple ≥ 30 °C en automne). "
+                   "Pour juger la canicule, placer la coupure avant un été.")
     meta_path = model.MODELS_DIR / f"modele_{zone}.json"
     if meta_path.exists():
         imp = json.loads(meta_path.read_text()).get("importance")
