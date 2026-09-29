@@ -37,9 +37,9 @@ Lancement : `python -m streamlit run Accueil.py`
 | Stations | ✅ testé sur données réelles (dép. 13, `latest`) | Météo-France climatologie horaire (data.gouv) |
 | Urbain | ✅ testé par Foucault, fusionné dans `main` | LCZ Cerema, BDNB (sans clé) |
 | Satellite | ✅ Landsat testé par Foucault, fusionné dans `main` ; Sentinel-3 nuit à faire | Landsat via Planetary Computer, Sentinel-2/3 via openEO |
-| AROME / ARPEGE | à faire | API ciblée Modèles Météo-France (clé requise) |
+| AROME / ARPEGE | ✅ codé (branche `arome-arpege`), testé avec un faux serveur WCS ; diagnostic réel à lancer | API ciblée Modèles (clés `METEOFRANCE_AROME_KEY`, `METEOFRANCE_ARPEGE_KEY`, en-tête `apikey`) |
 | ERA5 | ✅ fusionné, clé CDS de Foucault en place | Copernicus CDS (`~/.cdsapirc`), jeux « time-series » |
-| Croisement | ✅ codé (branche `croisement`) : fiche fixe + table horaire, export pour le modèle | toutes les sources + altitude IGN, distance à la mer IGN, NDVI Sentinel-2 |
+| Croisement | ✅ fusionné : fiche fixe + table horaire, export pour le modèle | toutes les sources + altitude IGN, distance à la mer IGN, NDVI Sentinel-2 |
 | Modèle | à faire | LightGBM, validation par station exclue + split temporel |
 
 ### Vérifié sur données réelles (09/2026)
@@ -57,6 +57,10 @@ Lancement : `python -m streamlit run Accueil.py`
 - Rendu des cartes plotly (MapLibre) : non vérifiable depuis le cloud (Urbain validé en local).
 - Landsat : dans le composite de Marseille, le Vieux-Port ressort masqué (NaN) ; à comprendre
   (bits `qa_pixel` sur l'eau ?) si on veut l'eau.
+- AROME / ARPEGE (lancer `python -m core.sources.meteofrance_nwp`) : écriture de l'heure du run
+  dans les identifiants (`T00.00.00Z` ou `T00:00:00Z`, les deux sont gérés), axe des échéances dans
+  DescribeCoverage (décalages en secondes supposés, dates ISO gérées aussi), noms des couvertures
+  rayonnement / pluie (`…_PT1H`), unités renvoyées en GeoTIFF (K ? J/m² ?).
 - ERA5 (premier téléchargement réel) : forme exacte du CSV renvoyé par les jeux « time-series »
   (un CSV ou un zip, noms courts `t2m` ou longs), et si ERA5-Land y est cumulé depuis 00 UTC.
   Le lecteur gère tous ces cas (tests synthétiques) et détecte le cumul sur `strd`.
@@ -84,7 +88,8 @@ Lancement : `python -m streamlit run Accueil.py`
 ## Décisions prises
 - Langage : Python + Streamlit. Stockage local Parquet/NetCDF, déploiement plus tard sur
   Google Cloud (Cloud Run + Cloud Storage + Cloud Scheduler, région europe-west9).
-- **Archivage des prévisions mis de côté pour l'instant** (mais c'est la seule donnée
+- **Archivage des prévisions** : amorcé au site (chaque run téléchargé dans l'onglet AROME / ARPEGE
+  est gardé dans `data/processed/prevision/`) ; l'archivage automatique reste à faire (mais c'est la seule donnée
   irremplaçable : AROME/ARPEGE ne sont conservés nulle part au-delà de 5 j (API) /
   14 j (fichiers)). Quand on s'y met : découper la zone (API ciblée avec lat/long),
   variables utiles seulement ; France entière en 0,025° ≈ 100 Go/an.
@@ -154,10 +159,11 @@ Lancement : `python -m streamlit run Accueil.py`
 - **SIRENE** : prospects (BTP NAF 41-43, logistique NAF 52).
 
 ## Prochaines étapes
-1. ~~Stations~~, ~~Urbain~~, ~~Satellite~~, ~~ERA5 + prototype UWG~~ (fusionnés). Croisement :
-   branche `croisement`, à tester puis fusionner. Sentinel-3 LST nuit plus tard.
+1. ~~Stations~~, ~~Urbain~~, ~~Satellite~~, ~~ERA5 + UWG~~, ~~Croisement~~ (fusionnés).
+   AROME / ARPEGE : branche `arome-arpege`, diagnostic réel puis fusion. Sentinel-3 plus tard.
 2. Géocodage : Géoplateforme (`data.geopf.fr/geocodage/search`), api-adresse est en fin de vie.
-3. AROME/ARPEGE (clé portail, Foucault la crée). UWG forcé par ERA5-Land sur d'autres villes.
+3. AROME-OM (outre-mer) ; archivage automatique des runs (tâche planifiée) ; UWG forcé par
+   ERA5-Land sur d'autres villes.
 4. Modèle : cible = T au site ; features = météo de référence + fiche du site (`core/features.py`) ;
    boucle sur les stations d'un ou plusieurs départements (téléchargements par station à
    automatiser : BDNB, Landsat, Sentinel-2, LCZ) ; validation par station exclue + split temporel.

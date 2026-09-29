@@ -27,7 +27,7 @@ st.markdown(
 | Onglet | Sources | État |
 |---|---|---|
 | **Stations** | Météo-France, climatologie horaire (data.gouv) | ✅ disponible |
-| **AROME / ARPEGE** | Portail API Météo-France (clé requise) | à venir |
+| **AROME / ARPEGE** | Prévisions Météo-France au site, archivées run par run (clés requises) | ✅ disponible |
 | **ERA5** | Copernicus CDS, ERA5-Land / ERA5 au point (clé gratuite requise) | ✅ disponible |
 | **Satellite** | Landsat 8/9 (Planetary Computer) : température de surface d'été | ✅ disponible |
 | **Urbain** | LCZ Cerema, BDNB (bâtiments autour d'un site) | ✅ disponible |

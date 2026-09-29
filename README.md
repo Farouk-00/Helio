@@ -31,7 +31,9 @@ Le site s'ouvre dans le navigateur (http://localhost:8501).
 5. Onglet **Satellite** → même site → télécharge les étés Landsat (≈ 30 s par été).
 6. Onglet **ERA5** → clé Copernicus CDS dans `~/.cdsapirc` (voir l'onglet) → période →
    séries, comparaison avec une station, export EPW d'une année complète.
-7. Onglet **Croisement** → une station (cible connue) ou un site → état des sources,
+7. Onglet **AROME / ARPEGE** → clés `METEOFRANCE_AROME_KEY` / `METEOFRANCE_ARPEGE_KEY` dans
+   `~/.zshrc` → run, variables, horizon → prévision au site (chaque run est archivé).
+8. Onglet **Croisement** → une station (cible connue) ou un site → état des sources,
    fiche fixe, table horaire, « Enregistrer pour le modèle » (`data/processed/croisement/`).
 
 ## Structure
