@@ -29,6 +29,8 @@ Le site s'ouvre dans le navigateur (http://localhost:8501).
 4. Onglet **Urbain** → choisis un **site** (adresse ou coordonnées) → télécharge
    le territoire LCZ qui le contient, puis les bâtiments BDNB autour.
 5. Onglet **Satellite** → même site → télécharge les étés Landsat (≈ 30 s par été).
+6. Onglet **ERA5** → clé Copernicus CDS dans `~/.cdsapirc` (voir l'onglet) → période →
+   séries, comparaison avec une station, export EPW d'une année complète.
 
 ## Structure
 
@@ -40,8 +42,10 @@ core/zones.py               départements métropole + outre-mer
 core/ui.py                  sélecteurs partagés (zone, site étudié)
 core/net.py                 téléchargement en flux, requêtes avec reprises
 core/maps.py                cartes plotly partagées (site, rayon, image raster)
+core/epw.py                 écriture de fichiers météo EPW (EnergyPlus, UWG)
 core/sources/               un module par source (télécharger / convertir / lire)
 data/raw, data/processed    stockage local (non versionné)
+prototypes/                 études ponctuelles (ex. UWG Marseille), hors application
 ```
 
 ## Notes

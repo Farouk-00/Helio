@@ -11,3 +11,5 @@ pyproj>=3.6
 rasterio>=1.3
 pystac-client>=0.7
 planetary-computer>=1.0
+cdsapi>=0.7.2
+uwg>=5.8

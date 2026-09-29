@@ -36,6 +36,16 @@ DEPARTEMENTS = {
 }
 
 
+# Décalage de l'heure locale normale (sans heure d'été) par rapport à UTC, en heures
+UTC_OFFSET = {"971": -4, "972": -4, "973": -3, "974": 4, "975": -3, "976": 3, "984": 5,
+              "986": 12, "987": -10, "988": 11}
+
+
+def utc_offset(code: str) -> float:
+    """Heure locale normale - UTC (métropole et Corse : +1)."""
+    return UTC_OFFSET.get(code, 1)
+
+
 def is_outre_mer(code: str) -> bool:
     return len(code) == 3
 

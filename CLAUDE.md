@@ -36,13 +36,16 @@ Lancement : `python -m streamlit run Accueil.py`
 |---|---|---|
 | Stations | ✅ testé sur données réelles (dép. 13, `latest`) | Météo-France climatologie horaire (data.gouv) |
 | Urbain | ✅ testé par Foucault, fusionné dans `main` | LCZ Cerema, BDNB (sans clé) |
-| Satellite | ✅ Landsat codé et testé en réel (branche `satellite-landsat`) ; Sentinel-3 nuit à faire | Landsat via Planetary Computer, Sentinel-2/3 via openEO |
+| Satellite | ✅ Landsat testé par Foucault, fusionné dans `main` ; Sentinel-3 nuit à faire | Landsat via Planetary Computer, Sentinel-2/3 via openEO |
 | AROME / ARPEGE | à faire | API ciblée Modèles Météo-France (clé requise) |
-| ERA5 | à faire | Copernicus CDS (`~/.cdsapirc`) |
+| ERA5 | ✅ codé (branche `era5-uwg`), testé avec un faux client CDS ; **jamais testé avec une vraie clé** | Copernicus CDS (`~/.cdsapirc`), jeux « time-series » |
 | Croisement | à faire | clic sur un point → toutes les variables → table d'entrée modèle |
 | Modèle | à faire | LightGBM, validation par station exclue + split temporel |
 
 ### Vérifié sur données réelles (09/2026)
+- Stations : `GLO` à l'horodatage HH UTC = cumul de HH-1 à HH (profil diurne de Marignane,
+  midi solaire 11 h 40 UTC). Marignane (13054001) a T, TD, U, vent, PMER, N (tri-horaire), GLO :
+  bonne référence « rurale » ; Marseille-Obs (13055001) : T seulement.
 - Stations : noms `H_<dep>_<periode>.csv.gz` et décimale `.` confirmés (dép. 13, `latest-2025-2026` :
   20 stations, 258 k lignes, 11 Mo -> 2,5 Mo Parquet). `GLO` : 1 station sur 20, tout en code 9.
   Le fichier `latest` s'arrêtait au 24/06/2026 (fin septembre 2026).
@@ -54,6 +57,19 @@ Lancement : `python -m streamlit run Accueil.py`
 - Rendu des cartes plotly (MapLibre) : non vérifiable depuis le cloud (Urbain validé en local).
 - Landsat : dans le composite de Marseille, le Vieux-Port ressort masqué (NaN) ; à comprendre
   (bits `qa_pixel` sur l'eau ?) si on veut l'eau.
+- ERA5 (premier téléchargement réel) : forme exacte du CSV renvoyé par les jeux « time-series »
+  (un CSV ou un zip, noms courts `t2m` ou longs), et si ERA5-Land y est cumulé depuis 00 UTC.
+  Le lecteur gère tous ces cas (tests synthétiques) et détecte le cumul sur `strd`.
+
+### Prototype UWG (09/2026) – voir `prototypes/uwg_marseille/README.md`
+- Marignane -> Marseille-Observatoire, JJA 2025, sans calage : RMSE horaire = référence naïve
+  (1,49 °C) mais **Tmin 1,45 -> 0,82 °C** (avec correction d'altitude). UWG surestime l'îlot
+  nocturne (~+1 °C) et rate la brise de mer de l'après-midi (ville 1-1,5 °C plus fraîche à 15 h).
+  => variable physique pour le modèle, pas un prédicteur autonome.
+- UWG diverge parfois à `dtsim=300` s (bureaux « pre80 ») : relancer à 150 s. Année non
+  bissextile, EPW à 3 profondeurs de sol obligatoires. GPL-3.
+- Ladybug Tools (plugins Rhino payant) et SOLENE-microclimat (CFD, Linux, par quartier) :
+  écartés pour la prévision ; `ladybug-comfort` utile plus tard pour l'UTCI.
 
 ## Décisions prises
 - Langage : Python + Streamlit. Stockage local Parquet/NetCDF, déploiement plus tard sur
@@ -94,7 +110,11 @@ Lancement : `python -m streamlit run Accueil.py`
 - **ECMWF Open Data** (CC-BY-4.0, commercial OK) : IFS/AIFS 0,25°, jusqu'à 15 j
   (IFS 00/12 : 3 h jusqu'à 144 h puis 6 h), rétention ~12 runs. `ecmwf-opendata`.
 - **ERA5-Land** (0,1°, horaire, 1950→) : utile surtout pour le **rayonnement** et
-  combler les trous. ERA5-HEAT (`derived-utci-historical`) : UTCI/MRT 0,25°, pour calibrer.
+  combler les trous. Jeux CDS « time-series » (au point, rapides) vérifiés :
+  `reanalysis-era5-land-timeseries` (0,1°, ~6 j de retard) et
+  `reanalysis-era5-single-levels-timeseries` (0,25°, + `total_cloud_cover`, rayonnement direct
+  `fdir`). Requête : `{"variable": [...], "location": {"longitude": x, "latitude": y},
+  "date": ["AAAA-MM-JJ/AAAA-MM-JJ"], "data_format": "csv"}` ; sans clé : 401. CC-BY 4.0. ERA5-HEAT (`derived-utci-historical`) : UTCI/MRT 0,25°, pour calibrer.
 - **Landsat 8/9 C2 L2** : LST 30 m, `ST_B10 × 0.00341802 + 149` (K), passage ~10h30 UTC,
   pas de nuit, 8 j combinés. Gratuit via **Planetary Computer** (`landsat-c2-l2`,
   bande `lwir11`). **Earth Engine = payant en usage commercial.**
@@ -124,9 +144,9 @@ Lancement : `python -m streamlit run Accueil.py`
 - **SIRENE** : prospects (BTP NAF 41-43, logistique NAF 52).
 
 ## Prochaines étapes
-1. ~~Stations~~, ~~Urbain~~ (faits). Satellite : tester en local puis fusionner
-   `satellite-landsat`. Sentinel-3 LST nuit (openEO, compte Copernicus) plus tard.
+1. ~~Stations~~, ~~Urbain~~, ~~Satellite~~ (fusionnés). ERA5 + prototype UWG : branche
+   `era5-uwg`, à tester avec une vraie clé CDS puis fusionner. Sentinel-3 LST nuit plus tard.
 2. Géocodage : Géoplateforme (`data.geopf.fr/geocodage/search`), api-adresse est en fin de vie.
-3. AROME/ARPEGE (clé portail), ERA5 (clé CDS).
+3. AROME/ARPEGE (clé portail). UWG forcé par ERA5-Land sur d'autres villes.
 4. Croisement → Modèle (cible : T au site ; features : météo de référence + fiche statique
    du site ; validation par station exclue).
