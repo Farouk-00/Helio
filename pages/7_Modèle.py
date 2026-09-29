@@ -157,7 +157,9 @@ if results_path(zone).exists():
     st.markdown(f"**Validation par stations exclues** ({res['kind']}) – RMSE en °C, erreur = prévu − mesuré")
     def rmse_table(records):
         t = pd.DataFrame(records).pivot(index="périmètre", columns="prédicteur", values="RMSE")
-        return t[["ERA5 brut", "ERA5 + biais moyen", "modèle"]].style.format(precision=2, na_rep="–")
+        t = t[["ERA5 brut", "ERA5 + biais moyen", "modèle"]]
+        # texte formaté : Streamlit affiche « None » pour une case vide, même avec un Styler
+        return t.apply(lambda col: col.map(lambda v: "–" if pd.isna(v) else f"{v:.2f}"))
 
     st.dataframe(rmse_table(res["scores"]))
     with st.expander("Biais, MAE et effectifs"):
