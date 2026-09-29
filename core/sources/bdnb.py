@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 from shapely.geometry import Point, shape
 
@@ -109,4 +110,30 @@ def summary(gdf: gpd.GeoDataFrame, lat: float, lon: float, radius_m: int) -> dic
         "part_batie": float(emprise.sum() / disk.area),
         "hauteur_moy": float((h * emprise).sum() / emprise[h.notna()].sum()) if h.notna().any() else None,
         "annee_med": float(annee.median()) if annee.notna().any() else None,
+    }
+
+
+def morphology(gdf: gpd.GeoDataFrame, lat: float, lon: float, radius_m: int) -> dict:
+    """Paramètres de forme urbaine (ceux d'UWG) sur les bâtiments dont le centre est dans le disque.
+
+    bldheight : hauteur moyenne pondérée par l'emprise (m) ; blddensity : emprise / surface du
+    disque ; vertohor : surface de façades (périmètre x hauteur) / surface du disque.
+    """
+    disk = gpd.GeoSeries([Point(lon, lat)], crs="EPSG:4326").to_crs(CRS).iloc[0].buffer(radius_m)
+    b = gdf.to_crs(CRS)
+    b = b[b.geometry.centroid.within(disk)].copy()
+    if b.empty:
+        return {"n_batiments": 0, "bldheight": np.nan, "blddensity": 0.0, "vertohor": 0.0,
+                "part_hauteur_manquante": np.nan, "usages_emprise": {}}
+    emprise, perimetre = b.geometry.area, b.geometry.length
+    h = b["hauteur_mean"].astype(float)
+    hf = h.fillna(h.median()) if h.notna().any() else h
+    usage = emprise.groupby(b["usage_principal_bdnb_open"].fillna("inconnu")).sum()
+    return {
+        "n_batiments": int(len(b)),
+        "bldheight": float((hf * emprise).sum() / emprise[hf.notna()].sum()) if hf.notna().any() else np.nan,
+        "blddensity": float(emprise.sum() / disk.area),
+        "vertohor": float((perimetre * hf).sum() / disk.area) if hf.notna().any() else np.nan,
+        "part_hauteur_manquante": float(h.isna().mean()),
+        "usages_emprise": (usage / usage.sum()).round(3).to_dict(),
     }

@@ -31,6 +31,8 @@ Le site s'ouvre dans le navigateur (http://localhost:8501).
 5. Onglet **Satellite** → même site → télécharge les étés Landsat (≈ 30 s par été).
 6. Onglet **ERA5** → clé Copernicus CDS dans `~/.cdsapirc` (voir l'onglet) → période →
    séries, comparaison avec une station, export EPW d'une année complète.
+7. Onglet **Croisement** → une station (cible connue) ou un site → état des sources,
+   fiche fixe, table horaire, « Enregistrer pour le modèle » (`data/processed/croisement/`).
 
 ## Structure
 
@@ -43,6 +45,7 @@ core/ui.py                  sélecteurs partagés (zone, site étudié)
 core/net.py                 téléchargement en flux, requêtes avec reprises
 core/maps.py                cartes plotly partagées (site, rayon, image raster)
 core/epw.py                 écriture de fichiers météo EPW (EnergyPlus, UWG)
+core/features.py            croisement : fiche fixe + table horaire d'un site (entrée du modèle)
 core/sources/               un module par source (télécharger / convertir / lire)
 data/raw, data/processed    stockage local (non versionné)
 prototypes/                 études ponctuelles (ex. UWG Marseille), hors application

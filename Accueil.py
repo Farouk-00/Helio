@@ -31,7 +31,7 @@ st.markdown(
 | **ERA5** | Copernicus CDS, ERA5-Land / ERA5 au point (clé gratuite requise) | ✅ disponible |
 | **Satellite** | Landsat 8/9 (Planetary Computer) : température de surface d'été | ✅ disponible |
 | **Urbain** | LCZ Cerema, BDNB (bâtiments autour d'un site) | ✅ disponible |
-| **Croisement** | Toutes les sources, en un point | à venir |
+| **Croisement** | Toutes les sources en un point : fiche fixe + table horaire (entrée du modèle) | ✅ disponible |
 | **Modèle** | LightGBM, validation par station exclue | à venir |
 """
 )

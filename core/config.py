@@ -30,4 +30,10 @@ GEOCODAGE_URL = "https://data.geopf.fr/geocodage/search"
 # Planetary Computer (Microsoft) : catalogue STAC, sans clé (URL signées automatiquement)
 PC_STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 
+# Altitude et limite terre-mer (IGN, Géoplateforme) ; trait de côte Natural Earth 1:10 M en repli
+ALTI_URL = "https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json"
+IGN_WFS_URL = "https://data.geopf.fr/wfs/ows"
+COASTLINE_URL = ("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/"
+                 "geojson/ne_10m_coastline.geojson")
+
 HTTP_TIMEOUT = 120

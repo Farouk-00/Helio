@@ -7,8 +7,8 @@ Marseille-Observatoire (Palais Longchamp) ?
 Étapes :
 1. EPW 2025 de Marignane depuis les observations horaires Météo-France (core/epw.py).
 2. Morphologie dans un rayon de 500 m autour de Marseille-Observatoire : BDNB
-   (hauteur, emprise, surface de façades, usages) ; végétation : NDVI Sentinel-2
-   (scène d'été la moins nuageuse, Planetary Computer).
+   (hauteur, emprise, surface de façades, usages : core/sources/bdnb.py) ; végétation :
+   NDVI Sentinel-2, scène d'été la moins nuageuse (core/sources/sentinel2.py).
 3. UWG du 25 mai au 31 août 2025 (7 jours de mise en route écartés).
 4. Comparaison horaire juin-août avec la mesure de Marseille-Observatoire, contre
    la référence naïve « T de Marignane ».
@@ -25,22 +25,14 @@ from __future__ import annotations
 import json
 import sys
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
-import planetary_computer
 import plotly.graph_objects as go
-import pystac_client
-import rasterio
 from plotly.subplots import make_subplots
-from rasterio.enums import Resampling
-from rasterio.transform import from_origin
-from rasterio.vrt import WarpedVRT
-from shapely.geometry import Point
 
 from core import epw
-from core.config import DATA_DIR, PC_STAC_URL
-from core.sources import bdnb
+from core.config import DATA_DIR
+from core.sources import bdnb, sentinel2
 from core.sources import meteofrance_stations as mfs
 
 OUT = DATA_DIR / "prototypes" / "uwg_marseille"
@@ -89,57 +81,12 @@ def morphology(lat: float, lon: float) -> dict:
     if not bdnb.is_ready(lat, lon, RAYON):
         print(f"BDNB : téléchargement des bâtiments dans {RAYON} m (quelques minutes)…")
         bdnb.fetch(lat, lon, RAYON)
-    b = bdnb.load(lat, lon, RAYON)
-    site = gpd.GeoSeries([Point(lon, lat)], crs="EPSG:4326").to_crs(bdnb.CRS).iloc[0]
-    disk = site.buffer(RAYON)
-    b = b[b.geometry.centroid.within(disk)].copy()     # bâtiments dont le centre est dans le disque
-    b["emprise"] = b.geometry.area
-    b["perimetre"] = b.geometry.length
-    h = b["hauteur_mean"].astype(float)
-    b["h"] = h.fillna(h.median())
-    usage = b.groupby(b["usage_principal_bdnb_open"].fillna("inconnu"))["emprise"].sum()
-    return {
-        "n_batiments": int(len(b)),
-        "bldheight": float((b["h"] * b["emprise"]).sum() / b["emprise"].sum()),
-        "blddensity": float(b["emprise"].sum() / disk.area),
-        "vertohor": float((b["perimetre"] * b["h"]).sum() / disk.area),
-        "part_hauteur_manquante": float(h.isna().mean()),
-        "usages_emprise": (usage / usage.sum()).round(3).to_dict(),
-    }
+    return bdnb.morphology(bdnb.load(lat, lon, RAYON), lat, lon, RAYON)
 
 
-def vegetation(lat: float, lon: float, res: float = 10.0) -> dict:
-    """Parts d'arbres (NDVI >= 0,5) et d'herbe (0,3 <= NDVI < 0,5) dans le disque."""
-    client = pystac_client.Client.open(PC_STAC_URL, modifier=planetary_computer.sign_inplace)
-    d = 0.01
-    items = list(client.search(collections=["sentinel-2-l2a"], bbox=[lon - d, lat - d, lon + d, lat + d],
-                               datetime=f"{EVAL[0]}/{EVAL[1]}").items())
-    it = min(items, key=lambda i: i.properties["eo:cloud_cover"])
-    pt = gpd.GeoSeries([Point(lon, lat)], crs="EPSG:4326")
-    crs = pt.estimate_utm_crs()
-    p = pt.to_crs(crs).iloc[0]
-    n = int(np.ceil(RAYON / res))
-    size = 2 * n + 1
-    transform = from_origin(p.x - (n + 0.5) * res, p.y + (n + 0.5) * res, res, res)
-
-    def read(asset: str) -> np.ndarray:
-        with rasterio.Env(GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR"), rasterio.open(it.assets[asset].href) as src, \
-                WarpedVRT(src, crs=crs, transform=transform, width=size, height=size,
-                          resampling=Resampling.nearest, nodata=0) as vrt:
-            return vrt.read(1).astype("float32")
-
-    # Depuis la version de traitement 04.00 (janv. 2022), réflectance = (CN - 1000) / 10 000
-    offset = 1000.0 if float(it.properties.get("s2:processing_baseline", "0")) >= 4.0 else 0.0
-    red, nir, scl = read("B04") - offset, read("B08") - offset, read("SCL")
-    yy, xx = np.mgrid[-n:n + 1, -n:n + 1]
-    disk = (xx ** 2 + yy ** 2) * res ** 2 <= RAYON ** 2
-    ok = disk & np.isin(scl, [2, 4, 5, 6, 7]) & (red + nir > 0)
-    ndvi = np.where(ok, (nir - red) / np.where(red + nir > 0, red + nir, 1), np.nan)
-    v = ndvi[ok]
-    return {"scene": it.id, "nuages_scene": it.properties["eo:cloud_cover"],
-            "part_pixels_valides": float(ok.sum() / disk.sum()),
-            "treecover": float((v >= 0.5).mean()), "grasscover": float(((v >= 0.3) & (v < 0.5)).mean()),
-            "ndvi_median": float(np.median(v))}
+def vegetation(lat: float, lon: float) -> dict:
+    """Parts d'arbres et d'herbe (NDVI Sentinel-2, scène d'été la moins nuageuse)."""
+    return sentinel2.vegetation(lat, lon, RAYON, YEAR)
 
 
 def building_mix(usages: dict) -> list:

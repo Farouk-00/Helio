@@ -38,8 +38,8 @@ Lancement : `python -m streamlit run Accueil.py`
 | Urbain | ✅ testé par Foucault, fusionné dans `main` | LCZ Cerema, BDNB (sans clé) |
 | Satellite | ✅ Landsat testé par Foucault, fusionné dans `main` ; Sentinel-3 nuit à faire | Landsat via Planetary Computer, Sentinel-2/3 via openEO |
 | AROME / ARPEGE | à faire | API ciblée Modèles Météo-France (clé requise) |
-| ERA5 | ✅ codé (branche `era5-uwg`), testé avec un faux client CDS ; **jamais testé avec une vraie clé** | Copernicus CDS (`~/.cdsapirc`), jeux « time-series » |
-| Croisement | à faire | clic sur un point → toutes les variables → table d'entrée modèle |
+| ERA5 | ✅ fusionné, clé CDS de Foucault en place | Copernicus CDS (`~/.cdsapirc`), jeux « time-series » |
+| Croisement | ✅ codé (branche `croisement`) : fiche fixe + table horaire, export pour le modèle | toutes les sources + altitude IGN, distance à la mer IGN, NDVI Sentinel-2 |
 | Modèle | à faire | LightGBM, validation par station exclue + split temporel |
 
 ### Vérifié sur données réelles (09/2026)
@@ -60,6 +60,16 @@ Lancement : `python -m streamlit run Accueil.py`
 - ERA5 (premier téléchargement réel) : forme exacte du CSV renvoyé par les jeux « time-series »
   (un CSV ou un zip, noms courts `t2m` ou longs), et si ERA5-Land y est cumulé depuis 00 UTC.
   Le lecteur gère tous ces cas (tests synthétiques) et détecte le cumul sur `strd`.
+
+- Altitude : `data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json`, ressource
+  `ign_rge_alti_wld` (72,5 m à Marseille-Obs pour 75 m annoncés).
+- Distance à la mer : WFS Géoplateforme `BDCARTO_V5:limite_terre_mer` (BD TOPO aussi dispo :
+  `BDTOPO_V3:limite_terre_mer`). **BBOX sans ambiguïté seulement avec le système explicite**
+  `…,urn:ogc:def:crs:OGC:1.3:CRS84` (lon, lat) ; sans lui, 0 objet. Inclut les lagunes
+  ouvertes (étang de Berre : Marignane à 0,8 km). Au-delà de ~50 km : Natural Earth 1:10 M
+  (écart ~1 km : Marseille-Obs 3,5 km contre 2,0 km avec l'IGN).
+- Croisement Marseille-Obs (JJA 2025 + 2026) : RMSE station voisine 1,91 °C, ERA5 1,74 °C
+  (ERA5 simulé dans le test local, à refaire avec le vrai ERA5).
 
 ### Prototype UWG (09/2026) – voir `prototypes/uwg_marseille/README.md`
 - Marignane -> Marseille-Observatoire, JJA 2025, sans calage : RMSE horaire = référence naïve
@@ -144,9 +154,10 @@ Lancement : `python -m streamlit run Accueil.py`
 - **SIRENE** : prospects (BTP NAF 41-43, logistique NAF 52).
 
 ## Prochaines étapes
-1. ~~Stations~~, ~~Urbain~~, ~~Satellite~~ (fusionnés). ERA5 + prototype UWG : branche
-   `era5-uwg`, à tester avec une vraie clé CDS puis fusionner. Sentinel-3 LST nuit plus tard.
+1. ~~Stations~~, ~~Urbain~~, ~~Satellite~~, ~~ERA5 + prototype UWG~~ (fusionnés). Croisement :
+   branche `croisement`, à tester puis fusionner. Sentinel-3 LST nuit plus tard.
 2. Géocodage : Géoplateforme (`data.geopf.fr/geocodage/search`), api-adresse est en fin de vie.
-3. AROME/ARPEGE (clé portail). UWG forcé par ERA5-Land sur d'autres villes.
-4. Croisement → Modèle (cible : T au site ; features : météo de référence + fiche statique
-   du site ; validation par station exclue).
+3. AROME/ARPEGE (clé portail, Foucault la crée). UWG forcé par ERA5-Land sur d'autres villes.
+4. Modèle : cible = T au site ; features = météo de référence + fiche du site (`core/features.py`) ;
+   boucle sur les stations d'un ou plusieurs départements (téléchargements par station à
+   automatiser : BDNB, Landsat, Sentinel-2, LCZ) ; validation par station exclue + split temporel.
