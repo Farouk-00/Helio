@@ -32,13 +32,9 @@ def lcz_catalog():
         return None
 
 
-@st.cache_data(show_spinner="Lecture du jeu d'entraînement…")
-def load_dataset(zone: str, mtime: float) -> pd.DataFrame:
-    return pd.read_parquet(model.dataset_path(zone))
-
-
-def results_path(zone: str):
-    return model.PROC / f"validation_{zone}.json"
+@st.cache_data(show_spinner="Lecture des jeux d'entraînement…")
+def load_datasets(zone_list: tuple, mtimes: tuple) -> pd.DataFrame:
+    return model.load_datasets(list(zone_list))
 
 
 zone = ui.zone_selector()
@@ -49,7 +45,18 @@ st.caption("Cible : l'écart entre la température mesurée à une station et ER
 
 obs, sta = stations(zone, tuple(mfs.downloaded_periods(zone)))
 if sta.empty:
-    st.info("Télécharge d'abord des observations dans l'onglet Stations pour cette zone.")
+    st.info("Aucune observation pour ce département. Pour l'ajouter à l'entraînement, télécharge ses mesures "
+            "horaires les plus récentes (fichier « latest », quelques dizaines de Mo).")
+    if st.button(f"Télécharger les observations récentes du {zone}", type="primary"):
+        with st.status("Téléchargement…", expanded=True) as status:
+            try:
+                model.fetch_latest_stations(zone, log=st.write)
+                status.update(label="Observations téléchargées", state="complete")
+            except Exception as exc:
+                status.update(label=f"Échec : {exc}", state="error")
+                st.stop()
+        st.cache_data.clear()
+        st.rerun()
     st.stop()
 cat = lcz_catalog()
 
@@ -103,24 +110,38 @@ if st.button("Construire le jeu d'entraînement", type="primary", disabled=chose
     st.cache_data.clear()
     st.rerun()
 
-path = model.dataset_path(zone)
-if not path.exists():
-    st.info("Aucun jeu d'entraînement pour cette zone : prépare les données puis construis le jeu.")
+available = model.available_datasets()
+if zone not in available:
+    st.info("Aucun jeu d'entraînement pour ce département : prépare les données puis construis le jeu.")
+
+# --------------------------------------------------------------------------- #
+# 3. Entraînement et validation
+# --------------------------------------------------------------------------- #
+st.header("3. Entraînement et validation")
+if not available:
     st.stop()
-df = load_dataset(zone, path.stat().st_mtime)
+chosen_zones = st.multiselect(
+    "Départements à combiner", available, default=[zone] if zone in available else available[:1],
+    help="Chaque département a son jeu (étape 2, à faire depuis sa page). Les combiner multiplie les stations : "
+         "le modèle voit plus de situations (littoral, relief, villes) et se généralise mieux.")
+if not chosen_zones:
+    st.stop()
+key = model.zones_key(chosen_zones)
+df = load_datasets(tuple(sorted(chosen_zones)),
+                   tuple(model.dataset_path(z).stat().st_mtime for z in sorted(chosen_zones)))
 cols = model.feature_columns(df)
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("Lignes (station × heure)", f"{len(df):,}".replace(",", " "))
 k2.metric("Stations", df["station"].nunique())
 k3.metric("Période", f"{df['time_utc'].min():%d/%m/%Y} → {df['time_utc'].max():%d/%m/%Y}")
 k4.metric("Variables explicatives", len(cols))
+old = model.missing_night_features(df)
+if old:
+    st.warning("Jeu(x) construit(s) sans les variables de nuit (relief, histoire récente d'ERA5) : "
+               + ", ".join(old) + ". Reconstruis-les (étape 2 sur la page de chaque département).")
 with st.expander("Variables et taux de remplissage"):
     st.dataframe(df[cols].notna().mean().rename("part renseignée").map(lambda x: f"{x:.0%}"))
 
-# --------------------------------------------------------------------------- #
-# 3. Entraînement et validation
-# --------------------------------------------------------------------------- #
-st.header("3. Entraînement et validation")
 kind = model.backend()
 if kind == "sklearn":
     st.info("LightGBM indisponible : scikit-learn (HistGradientBoosting) est utilisé. Sur Mac, pour LightGBM : "
@@ -145,14 +166,14 @@ if st.button("Entraîner et valider", type="primary"):
                "par_heure": hourly.reset_index().to_dict("records"),
                "temporel": th["scores"].to_dict("records") if th else None,
                "spatiotemporel": stt["scores"].to_dict("records") if stt else None, "coupure": split.isoformat()}
-        model.fit_final(df, zone, {"debut": str(df["time_utc"].min().date()), "fin": str(df["time_utc"].max().date()),
-                                   "rayon": radius, "rayon_sat": radius_sat, "stations": int(df["station"].nunique()),
-                                   "heures": int(len(df))}, kind)
-        results_path(zone).write_text(json.dumps(res, ensure_ascii=False, default=float))
-        status.update(label="Modèle entraîné et enregistré", state="complete")
+        model.fit_final(df, key, {"debut": str(df["time_utc"].min().date()), "fin": str(df["time_utc"].max().date()),
+                                  "rayon": radius, "rayon_sat": radius_sat, "zones": sorted(chosen_zones),
+                                  "stations": int(df["station"].nunique()), "heures": int(len(df))}, kind)
+        model.results_path(key).write_text(json.dumps(res, ensure_ascii=False, default=float))
+        status.update(label=f"Modèle {key} entraîné et enregistré", state="complete")
 
-if results_path(zone).exists():
-    res = json.loads(results_path(zone).read_text())
+if model.results_path(key).exists():
+    res = json.loads(model.results_path(key).read_text())
     scores = pd.DataFrame(res["scores"])
     st.markdown(f"**Validation par stations exclues** ({res['kind']}) – RMSE en °C, erreur = prévu − mesuré")
     def rmse_table(records):
@@ -184,7 +205,7 @@ if results_path(zone).exists():
         st.dataframe(rmse_table(res["spatiotemporel"]))
         st.caption("« – » : aucune heure dans ce périmètre sur la période testée (par exemple ≥ 30 °C en automne). "
                    "Pour juger la canicule, placer la coupure avant un été.")
-    meta_path = model.MODELS_DIR / f"modele_{zone}.json"
+    meta_path = model.MODELS_DIR / f"modele_{key}.json"
     if meta_path.exists():
         imp = json.loads(meta_path.read_text()).get("importance")
         if imp:
@@ -198,11 +219,14 @@ if results_path(zone).exists():
 # 4. Prédire au site
 # --------------------------------------------------------------------------- #
 st.header("4. Prédire au site")
-bundle = model.load_model(zone)
-site = st.session_state.get("site")
-if bundle is None:
+trained = model.trained_models()
+if not trained:
     st.info("Entraîne d'abord un modèle (étape 3).")
     st.stop()
+use = st.selectbox("Modèle", trained, index=trained.index(key) if key in trained else 0,
+                   format_func=lambda k: f"départements {k.replace('-', ', ')}")
+bundle = model.load_model(use)
+site = st.session_state.get("site")
 if not site:
     st.info("Choisis un site (onglets Urbain, Satellite, ERA5 ou Croisement).")
     st.stop()

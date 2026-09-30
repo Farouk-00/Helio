@@ -10,11 +10,15 @@ Validation :
 - **split temporel** : entraînement avant une date, test après (toutes stations).
 Référence : ERA5 brut, et ERA5 corrigé du biais moyen appris sur l'entraînement.
 
+Un jeu d'entraînement est construit par département ; le modèle peut en combiner
+plusieurs (clé « 13-30-83-84 »), ce qui multiplie les stations et les situations.
+
 Algorithme : LightGBM si disponible (sur Mac : `brew install libomp`), sinon
 HistGradientBoostingRegressor de scikit-learn (même famille d'algorithme).
 
 En ligne de commande (long : plusieurs minutes par station à la première préparation) :
-    python -m core.model --zone 13 --debut 2025-01-01 --fin 2025-12-31 --preparer --entrainer
+    python -m core.model --zone 13,30,83,84 --debut 2025-01-01 --fin 2025-12-31 \
+        --telecharger --preparer --entrainer
 """
 from __future__ import annotations
 
@@ -41,7 +45,10 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 ERA5_DATASET = "era5-land"
 # jour_annee est exclu : avec une seule année, il laisse le modèle apprendre l'erreur d'ERA5 propre à
 # une date (vue sur les autres stations), information indisponible en prévision réelle.
-EXCLUDE = {"lat", "lon", "rayon_m", "rayon_sat_m", "T_cible", "station", "cible", "time_utc", "jour_annee"}
+EXCLUDE = {"lat", "lon", "rayon_m", "rayon_sat_m", "T_cible", "station", "cible", "time_utc", "jour_annee",
+           "departement"}
+# variables ajoutées pour les nuits : un jeu construit avant ne les contient pas (à reconstruire)
+NIGHT_FEATURES = ("era5_T_moy24", "tpi_500")
 HOT = 30.0  # °C : seuil des « heures chaudes » dans les scores
 
 
@@ -71,6 +78,21 @@ def _new_model(kind: str, seed: int = 0):
 # --------------------------------------------------------------------------- #
 # Stations et préparation des données par station
 # --------------------------------------------------------------------------- #
+def fetch_latest_stations(zone: str, log=print) -> list[str]:
+    """Télécharge les observations horaires les plus récentes (fichiers « latest ») d'un département."""
+    cat = mfs.get_catalog()
+    rows = cat[(cat["departement"] == zone) & cat["periode"].str.contains("latest")]
+    if rows.empty:
+        raise ValueError(f"aucun fichier « latest » pour le département {zone}")
+    done = []
+    for r in rows.itertuples():
+        if not mfs.is_ready(zone, r.periode):
+            log(f"  observations {zone} {r.periode} ({r.taille_mo or '?'} Mo)")
+            mfs.fetch(zone, r.periode, r.url)
+        done.append(r.periode)
+    return done
+
+
 def stations_table(zone: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """(observations, stations avec température sur plus de la moitié des heures)."""
     per = mfs.downloaded_periods(zone)
@@ -164,13 +186,45 @@ def build_dataset(zone: str, obs: pd.DataFrame, stations: pd.DataFrame, start: s
         if table.empty:
             log(f"  {r.nom} : ignorée (aucune heure commune sur la période)")
             continue
-        frames.append(features.with_static(table, fiche).assign(station=r.NUM_POSTE, nom=r.nom))
+        frames.append(features.with_static(table, fiche).assign(station=r.NUM_POSTE, nom=r.nom, departement=zone))
         log(f"  {r.nom} : {len(table)} heures")
     if not frames:
         return pd.DataFrame()
     df = pd.concat(frames).reset_index()
+    # float32 : précision largement suffisante, moitié moins de disque et de mémoire
+    df = df.astype({c: "float32" for c in df.select_dtypes("float64").columns})
     df.to_parquet(dataset_path(zone), index=False)
     return df
+
+
+def available_datasets() -> list[str]:
+    """Départements pour lesquels un jeu d'entraînement existe."""
+    return sorted(p.stem[len("jeu_"):] for p in PROC.glob("jeu_*.parquet"))
+
+
+def zones_key(zone_list) -> str:
+    """Clé d'un modèle : départements triés, joints par « - » (ex. 13-30-83)."""
+    return "-".join(sorted(zone_list))
+
+
+def load_datasets(zone_list) -> pd.DataFrame:
+    """Jeux de plusieurs départements mis bout à bout."""
+    frames = []
+    for z in sorted(zone_list):
+        d = pd.read_parquet(dataset_path(z))
+        if "departement" not in d:
+            d["departement"] = z
+        frames.append(d)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def missing_night_features(df: pd.DataFrame) -> list[str]:
+    """Départements dont le jeu a été construit sans les variables de nuit."""
+    miss = [c for c in NIGHT_FEATURES if c not in df]
+    if miss:
+        return sorted(df["departement"].unique()) if "departement" in df else ["?"]
+    grp = df.groupby("departement")[list(NIGHT_FEATURES)].apply(lambda g: g.notna().any().all())
+    return sorted(grp[~grp].index)
 
 
 def feature_columns(df: pd.DataFrame) -> list[str]:
@@ -191,7 +245,7 @@ def _matrix(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
         X["lcz_site"] = pd.Categorical(X["lcz_site"].astype("string"), categories=list(lcz.LCZ_CLASSES))
     for c in X.columns:
         if c != "lcz_site":
-            X[c] = X[c].astype("float64")
+            X[c] = X[c].astype("float32")
     return X
 
 
@@ -296,7 +350,10 @@ def spatiotemporal(df: pd.DataFrame, split: str, n_folds: int = 5, kind: str | N
 
 
 def fit_final(df: pd.DataFrame, zone: str, meta: dict, kind: str | None = None) -> Path:
-    """Modèle final sur toutes les données, sauvegardé avec ses métadonnées."""
+    """Modèle final sur toutes les données, sauvegardé avec ses métadonnées.
+
+    `zone` : clé du modèle, un département (« 13 ») ou plusieurs (« 13-30-83 », voir zones_key).
+    """
     kind = kind or backend()
     cols = feature_columns(df)
     m = _new_model(kind)
@@ -323,6 +380,15 @@ def load_model(zone: str) -> dict | None:
         return pickle.load(f)
 
 
+def trained_models() -> list[str]:
+    """Clés des modèles enregistrés (« 13 », « 13-30-83 »…)."""
+    return sorted(p.stem[len("modele_"):] for p in MODELS_DIR.glob("modele_*.pkl"))
+
+
+def results_path(key: str) -> Path:
+    return PROC / f"validation_{key}.json"
+
+
 def predict(bundle: dict, table_with_static: pd.DataFrame) -> pd.Series:
     """Température prévue au site = ERA5 + écart prédit (NaN si ERA5 manque)."""
     X = _matrix(table_with_static.reindex(columns=bundle["features"]), bundle["features"])
@@ -334,39 +400,55 @@ def predict(bundle: dict, table_with_static: pd.DataFrame) -> pd.Series:
 # --------------------------------------------------------------------------- #
 def main() -> None:  # pragma: no cover - outil manuel
     p = argparse.ArgumentParser(description="Préparer les données et entraîner le modèle Hélio.")
-    p.add_argument("--zone", required=True)
+    p.add_argument("--zone", required=True, help="un ou plusieurs départements : 13 ou 13,30,83,84")
     p.add_argument("--debut", required=True, help="AAAA-MM-JJ")
     p.add_argument("--fin", required=True, help="AAAA-MM-JJ")
     p.add_argument("--rayon", type=int, default=150)
     p.add_argument("--rayon-sat", type=int, default=1000)
     p.add_argument("--sources", default="era5,bdnb,s2", help="parmi era5,bdnb,s2,landsat,lcz")
+    p.add_argument("--telecharger", action="store_true", help="observations « latest » manquantes")
     p.add_argument("--preparer", action="store_true")
+    p.add_argument("--construire", action="store_true", help="reconstruire les jeux (implicite avec --preparer)")
     p.add_argument("--entrainer", action="store_true")
     a = p.parse_args()
-    obs, st = stations_table(a.zone)
-    if st.empty:
-        raise SystemExit("Aucune station : télécharge les observations dans l'onglet Stations.")
+    zone_list = [z.strip() for z in a.zone.split(",") if z.strip()]
     try:
         cat = lcz.get_catalog()
     except Exception:
         cat = None
-    if a.preparer:
-        for i, r in enumerate(st.itertuples(), 1):
-            print(f"[{i}/{len(st)}] {r.nom}")
-            prepare_station(r, a.zone, a.debut, a.fin, a.rayon, a.rayon_sat, set(a.sources.split(",")), cat)
+    for zone in zone_list:
+        print(f"=== Département {zone}")
+        if a.telecharger and not mfs.downloaded_periods(zone):
+            fetch_latest_stations(zone)
+        obs, st = stations_table(zone)
+        if st.empty:
+            print("  aucune station (ajoute --telecharger ou passe par l'onglet Stations)")
+            continue
+        if a.preparer:
+            for i, r in enumerate(st.itertuples(), 1):
+                print(f"[{zone} {i}/{len(st)}] {r.nom}")
+                prepare_station(r, zone, a.debut, a.fin, a.rayon, a.rayon_sat, set(a.sources.split(",")), cat)
+        if a.preparer or a.construire or (a.entrainer and not dataset_path(zone).exists()):
+            build_dataset(zone, obs, st, a.debut, a.fin, a.rayon, a.rayon_sat, cat)
     if a.entrainer:
-        df = build_dataset(a.zone, obs, st, a.debut, a.fin, a.rayon, a.rayon_sat, cat)
-        if df.empty:
-            raise SystemExit("Jeu d'entraînement vide (ERA5 manquant ?).")
+        ready = [z for z in zone_list if dataset_path(z).exists()]
+        if not ready:
+            raise SystemExit("Aucun jeu d'entraînement (ERA5 manquant ?).")
+        df = load_datasets(ready)
+        old = missing_night_features(df)
+        if old:
+            print("Attention : jeux sans variables de nuit (relancer avec --construire) :", ", ".join(old))
+        key = zones_key(ready)
         cv = cross_validate(df)
-        print("Stations exclues :\n" + cv["scores"].round(2).to_string())
+        print(f"Modèle {key} – stations exclues :\n" + cv["scores"].round(2).to_string())
         t0, t1 = df["time_utc"].min(), df["time_utc"].max()
         split = str((t0 + (t1 - t0) * 0.75).date())
         stt = spatiotemporal(df, split)
         if stt:
             print(f"Stations exclues ET période après le {split} :\n" + stt["scores"].round(2).to_string())
-        path = fit_final(df, a.zone, {"debut": a.debut, "fin": a.fin, "rayon": a.rayon,
-                                      "stations": int(df["station"].nunique()), "heures": int(len(df))})
+        path = fit_final(df, key, {"debut": a.debut, "fin": a.fin, "rayon": a.rayon, "rayon_sat": a.rayon_sat,
+                                   "zones": ready, "stations": int(df["station"].nunique()),
+                                   "heures": int(len(df))})
         print("Modèle enregistré :", path)
 
 

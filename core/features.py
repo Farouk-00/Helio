@@ -99,6 +99,14 @@ def static_features(site: dict, zone: str, radius: int, radius_sat: int, lcz_cat
         except Exception as exc:
             f[name] = np.nan
             warn.append(f"{name} : {exc}")
+    # relief : position dans les creux / hauteurs, écart d'altitude avec la maille ERA5
+    ds = era5_dataset(lat, lon)
+    grid = era5.DATASETS[ds]["grille"] if ds else era5.DATASETS["era5-land"]["grille"]
+    try:
+        f.update(terrain.relief(lat, lon, grid))
+    except Exception as exc:
+        f.update({k: np.nan for k in ("tpi_500", "tpi_2000", "alt_maille", "ecart_alt_maille")})
+        warn.append(f"relief : {exc}")
 
     # LCZ : classe au site, parts de chaque classe et indicateurs moyens dans le rayon
     f["lcz_site"] = None
@@ -161,6 +169,40 @@ def _station_utc(s: pd.DataFrame, zone: str) -> pd.DataFrame:
     return s
 
 
+def history(e: pd.DataFrame, lat: float, lon: float) -> pd.DataFrame:
+    """Variables d'histoire récente calculées sur la série ERA5 (horaire, continue).
+
+    Elles portent l'inertie qui fait les nuits chaudes : chaleur accumulée dans la journée,
+    vent et nébulosité des heures précédentes. Toutes n'utilisent que le passé (pas de fuite).
+    - T_moy24, T_amp24 : moyenne et amplitude (max - min) de T sur 24 h ;
+    - dT24 : T - T 24 h avant ;
+    - GHI_6h, GHI_24h : rayonnement cumulé sur 6 h et 24 h (Wh/m²) ;
+    - WS_moy6 : vent moyen sur 6 h ; IR_moy6 : infrarouge descendant moyen sur 6 h (nuages la nuit) ;
+    - kt : indice de clarté (GHI / ciel clair de Haurwitz, de jour) ; kt_moy24 : sa moyenne sur 24 h.
+    """
+    from core.epw import solar_cos_zenith
+
+    idx = pd.date_range(e.index.min(), e.index.max(), freq="h")
+    x = e[~e.index.duplicated()].reindex(idx)
+    out = pd.DataFrame(index=idx)
+    if "T" in x:
+        out["T_moy24"] = x["T"].rolling(24, min_periods=18).mean()
+        out["T_amp24"] = x["T"].rolling(24, min_periods=18).max() - x["T"].rolling(24, min_periods=18).min()
+        out["dT24"] = x["T"] - x["T"].shift(24)
+    if "GHI" in x:
+        out["GHI_6h"] = x["GHI"].rolling(6, min_periods=5).sum()
+        out["GHI_24h"] = x["GHI"].rolling(24, min_periods=18).sum()
+        cosz = solar_cos_zenith(idx - pd.Timedelta(minutes=30), lat, lon)
+        clear = np.where(cosz > 0.1, 1098 * cosz * np.exp(-0.057 / np.clip(cosz, 0.1, None)), np.nan)
+        out["kt"] = (x["GHI"] / clear).clip(0, 1.2)
+        out["kt_moy24"] = out["kt"].rolling(24, min_periods=4).mean()
+    if "WS" in x:
+        out["WS_moy6"] = x["WS"].rolling(6, min_periods=5).mean()
+    if "IR" in x:
+        out["IR_moy6"] = x["IR"].rolling(6, min_periods=5).mean()
+    return e.join(out.reindex(e.index))
+
+
 def hourly_table(site: dict, zone: str, obs: pd.DataFrame | None, ref_station: str | None,
                  target_station: str | None) -> pd.DataFrame:
     lat, lon = site["lat"], site["lon"]
@@ -171,7 +213,7 @@ def hourly_table(site: dict, zone: str, obs: pd.DataFrame | None, ref_station: s
                                    for v, codes in REF_VARS.items() if v in s}))
     ds = era5_dataset(lat, lon)
     if ds:
-        parts.append(era5.load(ds, lat, lon).add_prefix("era5_"))
+        parts.append(history(era5.load(ds, lat, lon).sort_index(), lat, lon).add_prefix("era5_"))
     if obs is not None and target_station:
         s = _station_utc(obs[obs["NUM_POSTE"] == target_station].set_index("time").sort_index(), zone)
         parts.append(mfs.filter_quality(s, "T").rename("T_cible").to_frame())

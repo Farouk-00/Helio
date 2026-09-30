@@ -40,7 +40,7 @@ Lancement : `python -m streamlit run Accueil.py`
 | AROME / ARPEGE | ✅ fusionné, testé en réel par Foucault (T, HR, rayonnement, pluie) | API ciblée Modèles (clés `METEOFRANCE_AROME_KEY`, `METEOFRANCE_ARPEGE_KEY`, en-tête `apikey`) |
 | ERA5 | ✅ fusionné, clé CDS de Foucault en place | Copernicus CDS (`~/.cdsapirc`), jeux « time-series » |
 | Croisement | ✅ fusionné : fiche fixe + table horaire, export pour le modèle | toutes les sources + altitude IGN, distance à la mer IGN, NDVI Sentinel-2 |
-| Modèle | ✅ codé (branche `modele`), chaîne testée (ERA5 simulé) ; à lancer avec le vrai ERA5 | LightGBM (repli scikit-learn), cible = T station − ERA5, stations exclues + test temporel |
+| Modèle | ✅ testé en réel (13) sur `modele-propre` ; branche `multi-dep-nuit` : plusieurs départements + variables de nuit | LightGBM (repli scikit-learn), cible = T station − ERA5, stations exclues + test temporel + stations exclues ET période future |
 
 ### Vérifié sur données réelles (09/2026)
 - Stations : `GLO` à l'horodatage HH UTC = cumul de HH-1 à HH (profil diurne de Marignane,
@@ -93,6 +93,14 @@ RMSE °C, erreur = prévu − mesuré ; sans Landsat, LCZ manquante pour Arles, 
   l'erreur d'ERA5 d'une date donnée, vue sur les autres stations : score « stations exclues »
   optimiste). Ajout du test **stations exclues ET période future** (le plus honnête). Pour juger la
   canicule : couper avant un été (ERA5 2026 + mesures jusqu'à fin juin 2026 → été 2026 à compléter).
+- Avec Landsat + LCZ, sans `jour_annee` : test temporel 1,88 → 1,40 ; stations exclues ET période future
+  1,88 → 1,73 ; Tmax 2,08 → 1,52 mais **Tmin 2,14 → 2,03** : les nuits sont le point faible.
+- **Réponse (branche `multi-dep-nuit`)** : jeux par département combinables (clé `13-30-83-84`,
+  `model.zones_key`) ; variables de nuit : relief (`tpi_500`, `tpi_2000` = altitude du site − moyenne
+  d'un cercle de 500 m / 2 km ; `alt_maille`, `ecart_alt_maille` = écart avec la maille ERA5,
+  `terrain.relief`, une requête IGN multi-points, `lon=a|b&lat=c|d&delimiter=|`, vérifiée) et histoire
+  récente ERA5 (`features.history` : T moyenne / amplitude 24 h, dT24, GHI cumulé 6 h / 24 h, indice
+  de clarté, vent et IR moyens 6 h ; passé seulement). Jeux construits avant : à reconstruire.
 
 ### Prototype UWG (09/2026) – voir `prototypes/uwg_marseille/README.md`
 - Marignane -> Marseille-Observatoire, JJA 2025, sans calage : RMSE horaire = référence naïve
@@ -179,8 +187,8 @@ RMSE °C, erreur = prévu − mesuré ; sans Landsat, LCZ manquante pour Arles, 
 
 ## Prochaines étapes
 1. ~~Stations~~, ~~Urbain~~, ~~Satellite~~, ~~ERA5 + UWG~~, ~~Croisement~~, ~~AROME / ARPEGE~~ (fusionnés).
-   Modèle : branche `modele-propre` (ne pas fusionner `modele`, qui contient un fichier de test) ;
-   relancer avec Landsat + LCZ complètes, lire le test stations exclues + période future.
+   Modèle : branches `modele-propre` puis `multi-dep-nuit` (ne pas fusionner `modele`, qui contient
+   un fichier de test) ; entraîner sur 13 + 30, 83, 84, 04 avec les variables de nuit, comparer Tmin.
 2. Géocodage : Géoplateforme (`data.geopf.fr/geocodage/search`), api-adresse est en fin de vie.
 3. AROME-OM (outre-mer) ; archivage automatique des runs (tâche planifiée) ; UWG forcé par
    ERA5-Land sur d'autres villes.

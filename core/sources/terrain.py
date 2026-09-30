@@ -38,6 +38,52 @@ def altitude(lat: float, lon: float) -> float | None:
     return cache[k]
 
 
+def _elevations(lats: list[float], lons: list[float]) -> np.ndarray:
+    """Altitudes de plusieurs points en une requête (NaN hors couverture, ex. en mer)."""
+    r = get_json(ALTI_URL, params={"lon": "|".join(f"{x:.6f}" for x in lons),
+                                   "lat": "|".join(f"{y:.6f}" for y in lats),
+                                   "resource": "ign_rge_alti_wld", "zonly": "true", "delimiter": "|"})
+    z = np.array(r.json().get("elevations", []), dtype=float)
+    if len(z) != len(lats):
+        raise ValueError(f"altimétrie : {len(z)} valeurs reçues pour {len(lats)} points")
+    return np.where(z <= -9999, np.nan, z)
+
+
+def relief(lat: float, lon: float, grid_deg: float = 0.1) -> dict:
+    """Position du site dans le relief (utile la nuit : l'air froid s'accumule dans les creux).
+
+    - tpi_500, tpi_2000 : altitude du site moins l'altitude moyenne d'un cercle de 500 m / 2 km
+      (négatif = creux, positif = hauteur) ;
+    - alt_maille : altitude moyenne de la maille ERA5 qui contient le site (5 x 5 points) ;
+    - ecart_alt_maille : altitude du site moins celle de la maille (ERA5 ignore cet écart).
+    """
+    cache = _cache()
+    k = f"relief:{grid_deg}:" + _key(lat, lon)
+    if k not in cache:
+        lats, lons = [lat], [lon]
+        m_lat = 1 / 111_320
+        m_lon = 1 / (111_320 * np.cos(np.radians(lat)))
+        angles = np.linspace(0, 2 * np.pi, 12, endpoint=False)
+        for radius in (500, 2000):
+            lats += list(lat + radius * m_lat * np.sin(angles))
+            lons += list(lon + radius * m_lon * np.cos(angles))
+        glat, glon = round(lat / grid_deg) * grid_deg, round(lon / grid_deg) * grid_deg
+        offs = np.linspace(-grid_deg / 2 * 0.8, grid_deg / 2 * 0.8, 5)
+        for dy in offs:
+            for dx in offs:
+                lats.append(glat + dy)
+                lons.append(glon + dx)
+        z = _elevations(lats, lons)
+        z0, ring500, ring2000, cell = z[0], z[1:13], z[13:25], z[25:]
+        with np.errstate(all="ignore"):
+            res = {"tpi_500": z0 - np.nanmean(ring500), "tpi_2000": z0 - np.nanmean(ring2000),
+                   "alt_maille": np.nanmean(cell)}
+        res["ecart_alt_maille"] = z0 - res["alt_maille"]
+        cache[k] = {n: (None if not np.isfinite(v) else round(float(v), 1)) for n, v in res.items()}
+        CACHE.write_text(json.dumps(cache))
+    return {n: (np.nan if v is None else v) for n, v in cache[k].items()}
+
+
 def coastline() -> gpd.GeoDataFrame:
     if not COAST.exists():
         raw = RAW / "ne_10m_coastline.geojson"
