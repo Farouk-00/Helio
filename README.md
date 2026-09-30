@@ -34,7 +34,9 @@ Le site s'ouvre dans le navigateur (http://localhost:8501).
 7. Onglet **AROME / ARPEGE** → clés `METEOFRANCE_AROME_KEY` / `METEOFRANCE_ARPEGE_KEY` dans
    `~/.zshrc` → run, variables, horizon → prévision au site (chaque run est archivé).
 8. Onglet **Modèle** → préparer les stations (ERA5, BDNB, Sentinel-2…) → construire le jeu →
-   entraîner et valider → prédire au site. Long : aussi en terminal (`python -m core.model --help`).
+   entraîner et valider → prédire au site. Un jeu par département ; l'étape 3 peut en combiner
+   plusieurs. Long : aussi en terminal, ex. `python -m core.model --zone 13,30,83,84,04
+   --debut 2025-01-01 --fin 2025-12-31 --telecharger --preparer --entrainer`.
    LightGBM sur Mac : `brew install libomp` (sinon repli automatique sur scikit-learn).
 9. Onglet **Croisement** → une station (cible connue) ou un site → état des sources,
    fiche fixe, table horaire, « Enregistrer pour le modèle » (`data/processed/croisement/`).
