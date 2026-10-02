@@ -3,3 +3,5 @@ data/processed/
 __pycache__/
 *.pyc
 data/prototypes/
+pipeline/donnees/
+data/modeles/
