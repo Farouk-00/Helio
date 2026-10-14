@@ -1,0 +1,6 @@
+.env
+data/
+sorties/
+eval/resultats/
+__pycache__/
+.venv/

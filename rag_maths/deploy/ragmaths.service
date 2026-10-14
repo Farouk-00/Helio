@@ -1,0 +1,21 @@
+# /etc/systemd/system/ragmaths.service
+[Unit]
+Description=rag-maths (agent Mistral via OpenRouter)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ragmaths
+WorkingDirectory=/opt/rag_maths
+EnvironmentFile=/opt/rag_maths/.env
+ExecStart=/opt/rag_maths/.venv/bin/python -m ragmaths servir --hote 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+# Durcissement minimal
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/rag_maths/data /opt/rag_maths/sorties /opt/rag_maths/eval
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

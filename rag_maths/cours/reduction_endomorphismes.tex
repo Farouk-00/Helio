@@ -1,0 +1,107 @@
+\documentclass{article}
+\usepackage{amsmath,amssymb,amsthm}
+\newtheorem{theoreme}{Théorème}
+\newtheorem{definition}{Définition}
+\newtheorem{proposition}{Proposition}
+\begin{document}
+
+\section{Éléments propres}
+
+Dans tout le chapitre, $E$ est un $\mathbb{K}$-espace vectoriel de dimension finie $n \geq 1$
+et $u \in \mathcal{L}(E)$. On note $A \in \mathcal{M}_n(\mathbb{K})$ une matrice.
+
+\begin{definition}
+Un scalaire $\lambda \in \mathbb{K}$ est une valeur propre de $u$ s'il existe $x \neq 0$ tel que
+$u(x) = \lambda x$. Un tel $x$ est un vecteur propre associé à $\lambda$.
+Le sous-espace propre associé est $E_\lambda(u) = \ker(u - \lambda \mathrm{id}_E)$.
+L'ensemble des valeurs propres est le spectre, noté $\mathrm{Sp}(u)$.
+\end{definition}
+
+\begin{proposition}
+Des sous-espaces propres associés à des valeurs propres deux à deux distinctes sont en somme
+directe. En particulier, une famille de vecteurs propres associés à des valeurs propres
+distinctes est libre.
+\end{proposition}
+
+\begin{proof}
+Par récurrence sur le nombre de valeurs propres, en appliquant $u - \lambda_p \mathrm{id}$
+à une relation de dépendance.
+\end{proof}
+
+\section{Polynôme caractéristique}
+
+\begin{definition}
+Le polynôme caractéristique de $A$ est $\chi_A(X) = \det(X I_n - A)$. Il est unitaire de
+degré $n$, et $\chi_A(X) = X^n - \mathrm{tr}(A) X^{n-1} + \dots + (-1)^n \det(A)$.
+Deux matrices semblables ont le même polynôme caractéristique.
+\end{definition}
+
+\begin{proposition}
+$\lambda$ est valeur propre de $A$ si et seulement si $\chi_A(\lambda) = 0$.
+Si $\lambda$ est racine de $\chi_A$ de multiplicité $m(\lambda)$, alors
+$1 \leq \dim E_\lambda \leq m(\lambda)$.
+\end{proposition}
+
+\section{Diagonalisation}
+
+\begin{definition}
+$u$ est diagonalisable s'il existe une base de $E$ formée de vecteurs propres de $u$.
+De façon équivalente, $A$ est diagonalisable s'il existe $P$ inversible et $D$ diagonale
+telles que $A = P D P^{-1}$.
+\end{definition}
+
+\begin{theoreme}[Critère de diagonalisabilité]
+Les assertions suivantes sont équivalentes :
+\begin{enumerate}
+  \item $u$ est diagonalisable ;
+  \item $E = \bigoplus_{\lambda \in \mathrm{Sp}(u)} E_\lambda(u)$ ;
+  \item $\sum_{\lambda \in \mathrm{Sp}(u)} \dim E_\lambda(u) = n$ ;
+  \item $\chi_u$ est scindé sur $\mathbb{K}$ et pour toute valeur propre $\lambda$,
+        $\dim E_\lambda(u) = m(\lambda)$.
+\end{enumerate}
+\end{theoreme}
+
+\begin{proposition}
+Si $\chi_u$ est scindé à racines simples (en particulier si $u$ a $n$ valeurs propres
+distinctes), alors $u$ est diagonalisable. La réciproque est fausse : $\mathrm{id}_E$.
+\end{proposition}
+
+Méthode pratique : calculer $\chi_A$, en trouver les racines, puis pour chaque valeur propre
+résoudre $(A - \lambda I_n) X = 0$ pour obtenir une base de $E_\lambda$ ; $P$ a pour colonnes
+ces vecteurs.
+
+\section{Polynômes annulateurs}
+
+\begin{theoreme}[Cayley-Hamilton]
+Le polynôme caractéristique annule $u$ : $\chi_u(u) = 0$.
+\end{theoreme}
+
+\begin{definition}
+Le polynôme minimal $\pi_u$ est l'unique polynôme unitaire qui engendre l'idéal des
+polynômes annulateurs de $u$. Il divise $\chi_u$ et a les mêmes racines.
+\end{definition}
+
+\begin{theoreme}
+$u$ est diagonalisable si et seulement si $u$ admet un polynôme annulateur scindé à racines
+simples, si et seulement si $\pi_u$ est scindé à racines simples.
+\end{theoreme}
+
+\section{Trigonalisation}
+
+\begin{theoreme}
+$u$ est trigonalisable si et seulement si $\chi_u$ est scindé sur $\mathbb{K}$.
+En particulier, toute matrice de $\mathcal{M}_n(\mathbb{C})$ est trigonalisable.
+\end{theoreme}
+
+Si $A$ est trigonalisable de valeurs propres $\lambda_1, \dots, \lambda_n$ (comptées avec
+multiplicité), alors $\mathrm{tr}(A) = \sum_i \lambda_i$ et $\det(A) = \prod_i \lambda_i$.
+
+\section{Réduction des matrices symétriques réelles}
+
+\begin{theoreme}[Théorème spectral]
+Toute matrice symétrique réelle $S \in \mathcal{S}_n(\mathbb{R})$ est diagonalisable dans une
+base orthonormée : il existe $P \in O_n(\mathbb{R})$ et $D$ diagonale réelle telles que
+$S = P D P^{\top}$.
+\end{theoreme}
+
+\end{document}
