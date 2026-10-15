@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from .latex import compiler, compilateur, document, verifier_statique
+from .llm import texte
 from .retriever import Index, normaliser
 
 POIDS = {"latex": 0.15, "couverture": 0.25, "formules": 0.10, "citations": 0.10, "retrieval": 0.10, "fidelite": 0.30}
@@ -98,7 +99,7 @@ def m_fidelite(corps: str, chunks_vus: List[str], index: Index, cli, modele: str
             {"role": "user", "content": f"EXTRAITS :\n{extraits}\n\nFICHE :\n{corps}"},
         ],
     )
-    brut = r.choices[0].message.content or "{}"
+    brut = texte(r.choices[0].message.content) or "{}"
     m = re.search(r"\{.*\}", brut, re.S)
     affs = json.loads(m.group(0) if m else "{}").get("affirmations", [])
     if not affs:

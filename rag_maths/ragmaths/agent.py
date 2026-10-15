@@ -13,6 +13,7 @@ from typing import Callable, Dict, List, Optional
 
 from .config import CONFIG
 from .latex import ENVS_AUTORISES, extraire_corps
+from .llm import texte
 from .retriever import Index
 
 SYSTEME = f"""Tu es un assistant qui rédige des fiches de révision de mathématiques \
@@ -107,7 +108,7 @@ class Agent:
                 {"role": "system", "content": SYSTEME.replace("obtenus avec l'outil `chercher_cours`", "fournis ci-dessous")},
                 {"role": "user", "content": f"Extraits du cours :\n\n{contexte}\n\nDemande : {demande}"},
             ]
-            res.corps = extraire_corps(self._appel(res, messages=msgs).content or "")
+            res.corps = extraire_corps(texte(self._appel(res, messages=msgs).content))
             res.etapes, res.duree_s = 1, time.time() - t0
             return res
 
@@ -117,12 +118,12 @@ class Agent:
             msg = self._appel(res, messages=msgs, tools=OUTILS, tool_choice="none" if derniere else "auto")
             res.etapes = etape + 1
             if not msg.tool_calls:
-                res.corps = extraire_corps(msg.content or "")
+                res.corps = extraire_corps(texte(msg.content))
                 break
             msgs.append(
                 {
                     "role": "assistant",
-                    "content": msg.content or "",
+                    "content": texte(msg.content),
                     "tool_calls": [
                         {"id": t.id, "type": "function", "function": {"name": t.function.name, "arguments": t.function.arguments}}
                         for t in msg.tool_calls

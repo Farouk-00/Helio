@@ -99,3 +99,11 @@ def test_latex_statique_et_normalisation():
     assert verifier_statique("\\begin{theoreme} $x$ \\end{theoreme}") == []
     assert verifier_statique("\\begin{theoreme} $x \\end{lemme}")
     assert norm_latex("\\left( P D P^{-1} \\right)") == norm_latex("(PDP^{-1})")
+
+
+def test_contenu_en_blocs_mistral():
+    blocs = [{"type": "thinking", "thinking": [{"type": "text", "text": "je réfléchis"}]},
+             {"type": "text", "text": "\\section{SGD} ok"}]
+    cli = FauxClient([_msg(content=blocs)])
+    res = Agent(INDEX, cli, modele="test").resumer("x")
+    assert res.corps == "\\section{SGD} ok"

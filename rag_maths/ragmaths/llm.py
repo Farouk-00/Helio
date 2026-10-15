@@ -20,6 +20,27 @@ def client():
     )
 
 
+def texte(contenu) -> str:
+    """Contenu d'un message -> texte.
+
+    OpenRouter renvoie une chaîne ; l'API Mistral peut renvoyer une liste de blocs
+    (`{"type": "thinking", ...}`, `{"type": "text", "text": ...}`) : on ne garde que le texte.
+    """
+    if contenu is None:
+        return ""
+    if isinstance(contenu, str):
+        return contenu
+    morceaux = []
+    for bloc in contenu:
+        if isinstance(bloc, str):
+            morceaux.append(bloc)
+            continue
+        get = bloc.get if isinstance(bloc, dict) else lambda k, d=None: getattr(bloc, k, d)
+        if get("type", "text") == "text":
+            morceaux.append(get("text") or "")
+    return "".join(morceaux)
+
+
 def embedder(cli=None):
     """Renvoie une fonction textes -> vecteurs, ou None si aucun modèle d'embedding."""
     if not CONFIG.modele_embedding or not CONFIG.api_key:
