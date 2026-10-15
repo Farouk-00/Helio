@@ -11,8 +11,10 @@ Métriques (toutes dans [0, 1]) :
 - citations   : 0,5 × (citations qui pointent vers un chunk réellement lu)
                 + 0,5 × (part des énoncés definition/theoreme/... suivis d'un \\src{}).
 - retrieval   : part des sections attendues dont au moins un chunk a été lu (rappel).
-- fidelite    : LLM-juge (autre modèle) : part des affirmations mathématiques soutenues
-                par les extraits lus. Désactivable (--sans-juge), le score est alors renormalisé.
+- fidelite    : LLM-juge (autre modèle, voir juge.py) : chaque énoncé est vérifié seul contre
+                les chunks qu'il cite ; score = part des énoncés corrects. L'indicateur
+                principal est le NOMBRE D'ERREURS (colonne « erreurs », objectif 0).
+                Désactivable (--sans-juge), le score est alors renormalisé.
 
 score = moyenne pondérée (POIDS). On rapporte aussi coût (tokens) et latence.
 """
@@ -24,20 +26,12 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from .latex import compiler, compilateur, document, verifier_statique
-from .llm import texte
+from .juge import juger_fiche
 from .retriever import Index, normaliser
 
 POIDS = {"latex": 0.15, "couverture": 0.25, "formules": 0.10, "citations": 0.10, "retrieval": 0.10, "fidelite": 0.30}
-ENVS_ENONCES = ("definition", "theoreme", "proposition", "lemme", "corollaire", "methode")
-
-JUGE = """Tu es un correcteur de mathématiques rigoureux. On te donne des EXTRAITS d'un cours \
-et une FICHE de révision écrite à partir de ces extraits.
-Liste les affirmations mathématiques de la fiche (définitions, énoncés, formules, \
-hypothèses ; au plus 25) et indique pour chacune si elle est SOUTENUE par les extraits \
-(même formulée autrement), CONTREDITE, ou ABSENTE des extraits. Une hypothèse oubliée \
-dans un théorème compte comme CONTREDITE.
-Réponds UNIQUEMENT en JSON : {"affirmations": [{"texte": "...", "verdict": "SOUTENUE|CONTREDITE|ABSENTE"}]}"""
-
+ENVS_ENONCES = ("definition", "defn", "theoreme", "theorem", "proposition", "prop", "lemme", "lemma",
+                "corollaire", "corollary", "methode", "method")
 
 # --- métriques déterministes ------------------------------------------------------------
 
@@ -74,7 +68,7 @@ def m_citations(corps: str, chunks_vus: List[str]) -> Dict:
     ids = [i.strip() for c in cites for i in c.split(",")]
     valides = sum(i in chunks_vus for i in ids) / len(ids) if ids else 0.0
     # Un énoncé est « cité » si un \src apparaît dans son environnement ou juste après.
-    blocs = re.findall(r"\\begin\{(%s)\}(.*?)\\end\{\1\}(.{0,40})" % "|".join(ENVS_ENONCES), corps, re.S)
+    blocs = re.findall(r"\\begin\{(%s)\}(.*?)\\end\{\1\}(?=(.{0,40}))" % "|".join(ENVS_ENONCES), corps, re.S)
     cites_env = sum("\\src{" in b[1] + b[2] for b in blocs) / len(blocs) if blocs else 0.0
     return {"score": 0.5 * valides + 0.5 * cites_env, "valides": valides, "enonces_cites": cites_env, "n": len(ids)}
 
@@ -88,35 +82,14 @@ def m_retrieval(chunks_vus: List[str], index: Index, sections: List[str]) -> Dic
 
 # --- LLM-juge -----------------------------------------------------------------------------
 
-def m_fidelite(corps: str, chunks_vus: List[str], index: Index, cli, modele: str) -> Dict:
-    extraits = "\n\n".join(f"[{i}] {index.par_id[i].texte}" for i in chunks_vus if i in index.par_id)
-    r = cli.chat.completions.create(
-        model=modele,
-        temperature=0,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": JUGE},
-            {"role": "user", "content": f"EXTRAITS :\n{extraits}\n\nFICHE :\n{corps}"},
-        ],
-    )
-    brut = texte(r.choices[0].message.content) or "{}"
-    m = re.search(r"\{.*\}", brut, re.S)
-    affs = json.loads(m.group(0) if m else "{}").get("affirmations", [])
-    if not affs:
-        return {"score": 0.0, "detail": "réponse du juge vide"}
-    verdicts = [a.get("verdict", "").upper() for a in affs]
-    return {
-        "score": verdicts.count("SOUTENUE") / len(verdicts),
-        "n": len(verdicts),
-        "contredites": [a["texte"] for a in affs if a.get("verdict", "").upper() == "CONTREDITE"],
-        "absentes": [a["texte"] for a in affs if a.get("verdict", "").upper() == "ABSENTE"],
-    }
+def m_fidelite(corps: str, chunks_vus: List[str], index: Index, cli, modele: str, paralleles: int = 4) -> Dict:
+    return juger_fiche(corps, chunks_vus, index, cli, modele, paralleles)
 
 
 # --- boucle d'évaluation --------------------------------------------------------------------
 
 def evaluer_cas(cas: Dict, res, index: Index, cli=None, modele_juge: Optional[str] = None,
-                compiler_pdf: bool = True) -> Dict:
+                compiler_pdf: bool = True, paralleles: int = 4) -> Dict:
     m = {
         "latex": m_latex(res.corps, compiler_pdf),
         "couverture": m_couverture(res.corps, cas.get("notions", [])),
@@ -125,7 +98,7 @@ def evaluer_cas(cas: Dict, res, index: Index, cli=None, modele_juge: Optional[st
         "retrieval": m_retrieval(res.chunks_vus, index, cas.get("sections_attendues", [])),
     }
     if modele_juge and cli is not None:
-        m["fidelite"] = m_fidelite(res.corps, res.chunks_vus, index, cli, modele_juge)
+        m["fidelite"] = m_fidelite(res.corps, res.chunks_vus, index, cli, modele_juge, paralleles)
     poids = {k: POIDS[k] for k in m}
     m["score"] = sum(poids[k] * m[k]["score"] for k in m) / sum(poids.values())
     m["cout"] = {"tokens_entree": res.tokens_entree, "tokens_sortie": res.tokens_sortie,
@@ -140,13 +113,17 @@ def charger_cas(chemin: Path) -> List[Dict]:
 def tableau(resultats: Dict[str, List[Dict]]) -> str:
     """resultats = {mode: [métriques par cas]} -> tableau Markdown des moyennes."""
     cles = list(POIDS) + ["score"]
-    lignes = ["| mode | " + " | ".join(cles) + " | tokens | s |", "|" + "---|" * (len(cles) + 3)]
+    lignes = ["| mode | " + " | ".join(cles) + " | erreurs | sans erreur | tokens | s |",
+              "|" + "---|" * (len(cles) + 5)]
     for mode, liste in resultats.items():
         moy = []
         for k in cles:
             vals = [(r[k] if k == "score" else r[k]["score"]) for r in liste if k in r]
             moy.append(f"{sum(vals) / len(vals):.2f}" if vals else "–")
+        jugees = [r["fidelite"].get("n_erreurs", 0) for r in liste if "fidelite" in r]
+        err = f"{sum(jugees) / len(jugees):.1f}" if jugees else "–"
+        sans = f"{sum(e == 0 for e in jugees) / len(jugees):.0%}" if jugees else "–"
         tok = sum(r["cout"]["tokens_entree"] + r["cout"]["tokens_sortie"] for r in liste) / len(liste)
         dur = sum(r["cout"]["duree_s"] for r in liste) / len(liste)
-        lignes.append(f"| {mode} | " + " | ".join(moy) + f" | {tok:.0f} | {dur:.1f} |")
+        lignes.append(f"| {mode} | " + " | ".join(moy) + f" | {err} | {sans} | {tok:.0f} | {dur:.1f} |")
     return "\n".join(lignes)

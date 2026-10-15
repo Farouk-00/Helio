@@ -15,6 +15,7 @@ def client():
     return OpenAI(
         base_url=CONFIG.base_url,
         api_key=CONFIG.api_key,
+        max_retries=6,  # 429 (limite de débit) et erreurs réseau : nouvelles tentatives espacées
         # Nom de l'appli dans le tableau de bord OpenRouter (ignoré par Mistral).
         default_headers={"X-Title": "rag-maths"},
     )

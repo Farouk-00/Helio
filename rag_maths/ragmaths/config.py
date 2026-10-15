@@ -54,6 +54,8 @@ class Config:
     k: int = 6
     etapes_max: int = int(os.environ.get("ETAPES_MAX", 8))
     temperature: float = 0.2
+    # Appels au juge en parallèle (baisser à 1 si l'offre gratuite Mistral renvoie des 429).
+    juge_paralleles: int = int(os.environ.get("JUGE_PARALLELES", 4))
 
 
 CONFIG = Config()

@@ -66,7 +66,7 @@ def cmd_evaluer(a) -> None:
         resultats[mode] = []
         for c in cas:
             res = agent.resumer(c["demande"], mode=mode)
-            m = evaluer_cas(c, res, agent.index, cli, juge)
+            m = evaluer_cas(c, res, agent.index, cli, juge, paralleles=CONFIG.juge_paralleles)
             m["id"] = c["id"]
             resultats[mode].append(m)
             print(f"[{mode}] {c['id']}: score {m['score']:.2f}")
@@ -77,6 +77,52 @@ def cmd_evaluer(a) -> None:
     f.write_text(json.dumps({"modele": agent.modele, "juge": juge, "resultats": resultats},
                             ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"\nDétail : {f}")
+
+
+def _fiche(chemin: str):
+    from .latex import extraire_corps
+    from .llm import client
+    from .retriever import Index
+
+    if not CONFIG.fichier_index.exists():
+        sys.exit("Index absent : lancer d'abord `python -m ragmaths indexer`.")
+    return extraire_corps(Path(chemin).read_text(encoding="utf-8")), Index.charger(CONFIG.fichier_index), client()
+
+
+def _sauver(nom: str, data) -> Path:
+    dossier = RACINE / "eval" / "resultats"
+    dossier.mkdir(parents=True, exist_ok=True)
+    f = dossier / f"{time.strftime('%Y%m%d-%H%M%S')}_{nom}.json"
+    f.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    return f
+
+
+def cmd_juger(a) -> None:
+    from .juge import juger_fiche
+
+    corps, index, cli = _fiche(a.fiche)
+    m = juger_fiche(corps, [], index, cli, CONFIG.modele_juge, CONFIG.juge_paralleles)
+    print(f"{m['n']} énoncés : {m['n_erreurs']} erreur(s), {m.get('n_non_soutenus', 0)} non soutenu(s) ; "
+          f"score {m['score']:.2f}")
+    for e in m.get("erreurs", []):
+        print(f"\n✗ {e['titre'] or '(sans titre)'}\n  fiche : {e['probleme']}\n  cours : {e['preuve']}")
+    for e in m.get("non_soutenus", []):
+        print(f"\n? {e['titre'] or '(sans titre)'} ({e['verdict']}) {e['probleme'] or ''}")
+    print(f"\nDétail : {_sauver('juge_' + Path(a.fiche).stem, m)}")
+
+
+def cmd_tester_juge(a) -> None:
+    from .juge import tableau_test_juge, tester_juge
+
+    corps, index, cli = _fiche(a.fiche)
+    r = tester_juge(corps, index, cli, CONFIG.modele_juge, a.n, a.graine, CONFIG.juge_paralleles)
+    print(f"Juge : {CONFIG.modele_juge} ; {r['n_enonces']} énoncés dans la fiche\n")
+    print(tableau_test_juge(r))
+    for nom, d in r["par_type"].items():
+        for x in d["details"]:
+            if x["verdict"] != "ERREUR":
+                print(f"\nratée [{nom}] {x['titre']} : {x['extrait_altere']}")
+    print(f"\nDétail : {_sauver('test_juge_' + Path(a.fiche).stem, r)}")
 
 
 def cmd_servir(a) -> None:
@@ -102,6 +148,14 @@ def main() -> None:
     s.add_argument("--modes", nargs="+", default=["rag", "agent"])
     s.add_argument("--sans-juge", action="store_true")
     s.set_defaults(f=cmd_evaluer)
+    s = sp.add_parser("juger", help="vérifie une fiche énoncé par énoncé (LLM-juge)")
+    s.add_argument("fiche")
+    s.set_defaults(f=cmd_juger)
+    s = sp.add_parser("tester-juge", help="injecte des erreurs dans une fiche et mesure le juge")
+    s.add_argument("fiche")
+    s.add_argument("--n", type=int, default=3, help="erreurs injectées par type")
+    s.add_argument("--graine", type=int, default=0)
+    s.set_defaults(f=cmd_tester_juge)
     s = sp.add_parser("servir")
     s.add_argument("--hote", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8000)

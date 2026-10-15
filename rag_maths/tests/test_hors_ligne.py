@@ -75,13 +75,55 @@ def test_boucle_agent_et_metriques():
     assert "| agent |" in tableau({"agent": [m]})
 
 
-def test_juge():
-    from ragmaths.evaluate import m_fidelite
+class FauxJuge:
+    """Juge factice (thread-safe) : ERREUR si l'énoncé contient un marqueur d'erreur."""
 
-    verdicts = {"affirmations": [{"texte": "a", "verdict": "SOUTENUE"}, {"texte": "b", "verdict": "CONTREDITE"}]}
-    cli = FauxClient([_msg(content=json.dumps(verdicts))])
-    m = m_fidelite("fiche", [INDEX.chunks[0].id], INDEX, cli, "juge")
-    assert m["score"] == 0.5 and m["contredites"] == ["b"]
+    def __init__(self, marqueurs=("+ 3", "maximizes", "[OLS] :")):
+        self.marqueurs, self.n = marqueurs, 0
+        self.chat = NS(completions=NS(create=self._create))
+
+    def _create(self, **kw):
+        self.n += 1
+        enonce = kw["messages"][-1]["content"].split("ÉNONCÉ :", 1)[1]
+        faux = next((m for m in self.marqueurs if m in enonce), None)
+        v = {"probleme": faux or "", "preuve": "cours", "verdict": "ERREUR" if faux else "CORRECT"}
+        return _msg(content=json.dumps(v))
+
+
+FICHE = r"""
+\begin{proposition}[OLS] If \( X \) is injective, then: \[ \hat\beta = (X^T X)^{-1} X^T Y \] \src{%(a)s}\end{proposition}
+\begin{definition}[Cp] The selected model minimizes \( C_p(m) = RSS/\sigma^2 - n + 2 |m| \). \src{%(a)s}\end{definition}
+\begin{remark}[R2] If \( m_0 \subset m_1 \), then \( R^2(m_1) \geq R^2(m_0) \).\end{remark}
+""" % {"a": "c0"}
+
+
+def test_juge_par_enonce():
+    from ragmaths.juge import extraire_enonces, juger_fiche
+
+    enonces = extraire_enonces(FICHE)
+    assert [e.env for e in enonces] == ["proposition", "definition", "remark"]
+    assert enonces[0].ids == ["c0"] and enonces[2].ids == []
+    juge = FauxJuge()
+    m = juger_fiche(FICHE.replace("2 |m|", "3 |m|"), ["c0", "c1"], INDEX, juge, "juge", paralleles=2)
+    assert juge.n == 3 and m["n"] == 3 and m["n_erreurs"] == 1 and abs(m["score"] - 2 / 3) < 1e-9
+    assert m["erreurs"][0]["titre"] == "Cp"
+
+
+def test_mutations_et_test_du_juge():
+    from ragmaths.juge import extraire_enonces, muter_constante, muter_hypothese, muter_inegalite, \
+        muter_sens, tester_juge
+
+    e = extraire_enonces(FICHE)
+    assert "injective" not in muter_hypothese(e[0].texte)
+    assert "3 |m|" in muter_constante(e[1].texte)
+    assert "\\leq" in muter_inegalite(e[2].texte)
+    assert "maximizes" in muter_sens(e[1].texte)
+    assert muter_inegalite("pas de maths ici <") is None  # hors maths : intact
+    r = tester_juge(FICHE, INDEX, FauxJuge(), "juge", n_par_type=1, paralleles=2)
+    # Le faux juge détecte constante (+ 3), sens (maximizes) et hypothèse (« If ..., then » retiré -> « [OLS] : »), pas l'inégalité.
+    assert r["par_type"]["constante_changee"]["rappel"] == 1.0
+    assert r["par_type"]["inegalite_inversee"]["rappel"] == 0.0
+    assert r["faux_positifs"] == 0.0 and r["rappel_global"] == 0.75
 
 
 def test_mode_rag_et_dernier_tour_sans_outil():

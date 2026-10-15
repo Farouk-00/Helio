@@ -48,13 +48,23 @@ Score composite dans [0, 1] par cas, moyenné sur `eval/cas.jsonl` (cas annotés
 | formules | 0,10 | formules clés retrouvées après normalisation LaTeX | déterministe |
 | citations | 0,10 | ½ citations pointant vers un chunk réellement lu + ½ énoncés cités | déterministe |
 | retrieval | 0,10 | rappel des sections attendues parmi les chunks lus | déterministe |
-| fidélité | 0,30 | LLM-juge (autre modèle Mistral) : part des affirmations soutenues par les extraits ; une hypothèse oubliée = contredite | LLM |
+| fidélité | 0,30 | LLM-juge (autre modèle Mistral) : **chaque énoncé vérifié seul** contre les chunks qu'il cite (hypothèses comparées une à une, passage fautif cité mot à mot) ; score = part des énoncés corrects, indicateur principal = **nombre d'erreurs** | LLM |
 
 Plus coût (tokens) et latence par mode, et le détail JSON (notions manquantes, affirmations
 contredites) dans `eval/resultats/`. `--sans-juge` pour une éval gratuite et reproductible.
 
+### Évaluer l'évaluateur
+```bash
+python -m ragmaths juger sorties/hds_ch1.tex         # erreurs d'une fiche, énoncé par énoncé
+python -m ragmaths tester-juge sorties/hds_ch1.tex   # injecte des erreurs, mesure le juge
+```
+`tester-juge` altère des énoncés de la fiche (hypothèse supprimée, constante changée, inégalité
+inversée, sens inversé : minimise ↔ maximise…), les soumet au juge et donne son **rappel par
+type d'erreur**, puis son **taux de faux positifs** sur les énoncés intacts. On ne fait confiance
+à la métrique de fidélité qu'après ce test.
+
 Limites connues (et pistes) : couverture par chaînes (→ juge pour l'équivalence sémantique),
-juge à valider contre des notes humaines sur ~20 fiches (corrélation de Spearman), variance du
+juge à valider aussi contre des notes humaines (le test par injection ne couvre que des erreurs synthétiques), variance du
 générateur (→ 3 tirages par cas), petit jeu de cas (→ l'enrichir à chaque bug observé).
 
 ## Déploiement sur VPS
