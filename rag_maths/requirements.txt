@@ -1,5 +1,6 @@
 openai>=1.40
 pypdf>=4.0
+fonttools>=4.0
 fastapi>=0.110
 uvicorn>=0.29
 pytest>=8.0

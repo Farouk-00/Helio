@@ -49,7 +49,12 @@ def _decouper_sur(texte: str, motif: re.Pattern, groupe_titre: int) -> List[Tupl
 
 
 def _blocs_pdf(chemin: Path) -> List[Tuple[str, str]]:
+    import logging
+
     from pypdf import PdfReader  # import paresseux : dépendance facultative
+
+    # pypdf avertit à chaque police Type1 sans fontTools : bruyant et sans conséquence ici.
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
 
     lecteur = PdfReader(str(chemin))
     return [(f"page {i + 1}", p.extract_text() or "") for i, p in enumerate(lecteur.pages)]
