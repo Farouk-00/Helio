@@ -107,3 +107,33 @@ def test_contenu_en_blocs_mistral():
     cli = FauxClient([_msg(content=blocs)])
     res = Agent(INDEX, cli, modele="test").resumer("x")
     assert res.corps == "\\section{SGD} ok"
+
+
+def test_pdf_entetes_et_sommaire():
+    from ragmaths.ingest import _decouper_par_sommaire, _retirer_entetes
+
+    pages = [f"{100 + i} CHAPTER 1. PRELIMINARIES\ncorps {i}\nsuite" for i in range(4)]
+    pages[1] = "101 CHAPTER 1. PRELIMINARIES\nfin de l'intro\n1.2.1 Hoeffding’s Inequality\nIf Z1..."
+    pages = _retirer_entetes(pages)
+    assert all("CHAPTER" not in p for p in pages)
+    assert sum("suite" in p for p in pages) == 3  # ligne répétée sans numéro : gardée
+    texte, debuts = "", []
+    for p in pages:
+        debuts.append(len(texte))
+        texte += p + "\n\n"
+    entrees = [(0, "Mathematical Preliminaries", 0), (1, "Concentration Inequalities", 0),
+               (2, "Hoeffding's Inequality", 1), (2, "Bernstein's Inequality ()", 3)]
+    blocs = dict(_decouper_par_sommaire(texte, debuts, entrees))
+    nom = "Mathematical Preliminaries > Concentration Inequalities > 1.2.1 Hoeffding's Inequality"
+    assert blocs[nom].lstrip().startswith("1.2.1 Hoeffding")   # coupé au titre, pas à la page
+    assert "fin de l'intro" in blocs["Mathematical Preliminaries > Concentration Inequalities"]
+    assert any("Bernstein" in n for n in blocs)                # introuvable -> début de page
+
+
+def test_pdf_sans_signets_titres_numerotes():
+    from ragmaths.ingest import _blocs_titres_pdf
+
+    texte = ("Intro\n1.2 Concentration Inequalities\nblabla\n0. This leads to, using x = 2\n"
+             "11 From Online Learning to Bandits 313\n1.2.1 Hoeffding’s Inequality\nIf Z...")
+    noms = [n for n, _ in _blocs_titres_pdf(texte)]
+    assert noms == ["(début)", "1.2 Concentration Inequalities", "1.2.1 Hoeffding’s Inequality"]
