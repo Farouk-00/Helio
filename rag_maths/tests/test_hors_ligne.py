@@ -1,6 +1,7 @@
 """Tests sans réseau : faux client OpenAI qui rejoue un scénario d'appels d'outils."""
 from __future__ import annotations
 
+import copy
 import json
 from types import SimpleNamespace as NS
 
@@ -26,7 +27,7 @@ class FauxClient:
         self.chat = NS(completions=NS(create=self._create))
 
     def _create(self, **kw):
-        self.appels.append(kw)
+        self.appels.append(copy.deepcopy(kw))  # instantané : la liste de messages évolue
         return self.reponses.pop(0)
 
 
@@ -137,3 +138,24 @@ def test_pdf_sans_signets_titres_numerotes():
              "11 From Online Learning to Bandits 313\n1.2.1 Hoeffding’s Inequality\nIf Z...")
     noms = [n for n, _ in _blocs_titres_pdf(texte)]
     assert noms == ["(début)", "1.2 Concentration Inequalities", "1.2.1 Hoeffding’s Inequality"]
+
+
+def test_relance_si_appel_outil_ecrit_en_texte():
+    from ragmaths import agent as mod
+
+    boucle = [_msg(appels=[("chercher_cours", {"requete": "x"})])] * (mod.CONFIG.etapes_max - 1)
+    cli = FauxClient(boucle + [_msg(content='{"requete": "R2", "k": 5}'), _msg(content="\\section{R2} ok")])
+    res = Agent(INDEX, cli, modele="test").resumer("x")
+    assert res.corps == "\\section{R2} ok"
+    # Consigne de fin collée au dernier message d'outil (pas de « user » après « tool »).
+    avant_dernier = cli.appels[-2]["messages"]
+    assert avant_dernier[-1]["role"] == "tool" and mod.CONSIGNE_FIN in avant_dernier[-1]["content"]
+    assert [m["role"] for m in cli.appels[-1]["messages"]][-2:] == ["assistant", "user"]
+
+
+def test_lire_section():
+    chunks, total = INDEX.lire_section("polynomes annulateurs")  # accents/casse ignorés
+    assert total == len(chunks) >= 1 and all(c.section == "Polynômes annulateurs" for c in chunks)
+    cli = FauxClient([_msg(appels=[("lire_section", {"section": "Diagonalisation"})]), _msg(content="\\section{D}")])
+    res = Agent(INDEX, cli, modele="test").resumer("Résume la diagonalisation")
+    assert res.requetes == ["[section] Diagonalisation"] and _id("Diagonalisation") in res.chunks_vus

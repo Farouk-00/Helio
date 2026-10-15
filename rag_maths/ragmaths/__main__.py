@@ -42,7 +42,8 @@ def cmd_resumer(a) -> None:
 
     agent, _ = _agent()
     res = agent.resumer(a.demande, mode=a.mode)
-    tex = document(res.corps, a.titre or a.demande)
+    titre = a.titre or (a.demande if len(a.demande) <= 60 else "Fiche de révision")
+    tex = document(res.corps, titre)
     sortie = Path(a.sortie)
     sortie.parent.mkdir(parents=True, exist_ok=True)
     sortie.write_text(tex, encoding="utf-8")
@@ -51,6 +52,7 @@ def cmd_resumer(a) -> None:
     pdf = "oui" if ok else f"non ({lignes[-1] if lignes else '?'})"
     print(f"{sortie} ({res.etapes} étape(s), {len(res.chunks_vus)} chunks lus, "
           f"{res.tokens_entree}+{res.tokens_sortie} tokens, {res.duree_s:.1f} s) ; PDF : {pdf}")
+    print("Outils appelés : " + " | ".join(res.requetes))
 
 
 def cmd_evaluer(a) -> None:

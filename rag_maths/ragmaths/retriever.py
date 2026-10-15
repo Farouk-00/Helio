@@ -12,7 +12,7 @@ import re
 import unicodedata
 from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from .ingest import Chunk
 
@@ -91,6 +91,15 @@ class Index:
         if len(classements) == 1:
             meilleurs = [i for i in meilleurs if s_bm25[i] > 0]
         return [self.chunks[i] for i in meilleurs[:k]]
+
+    def lire_section(self, nom: str, debut: int = 0, n: int = 25) -> Tuple[List[Chunk], int]:
+        """Chunks (dans l'ordre du cours) dont « fichier > section » contient `nom`.
+
+        Renvoie (chunks[debut:debut+n], nombre total) pour lire un long chapitre en plusieurs fois.
+        """
+        cle = normaliser(nom).strip()
+        tous = [c for c in self.chunks if cle and cle in normaliser(f"{c.source} > {c.section}")]
+        return tous[debut:debut + n], len(tous)
 
     def sections(self) -> List[str]:
         vues, res = set(), []

@@ -52,7 +52,7 @@ class Config:
     taille_chunk: int = 1200  # caractères
     recouvrement: int = 200
     k: int = 6
-    etapes_max: int = 6
+    etapes_max: int = int(os.environ.get("ETAPES_MAX", 8))
     temperature: float = 0.2
 
 

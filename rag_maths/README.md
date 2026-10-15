@@ -6,7 +6,7 @@ Mistral (API Mistral directe ou via OpenRouter, au choix dans `.env`) + recherch
 ```
 cours/*.tex|md|pdf ──indexer──> data/index.json (chunks par section + embeddings)
                                        │
-demande ──> Agent (Mistral, tools: plan_du_cours, chercher_cours) ──> corps LaTeX + \src{cID}
+demande ──> Agent (Mistral, tools: plan_du_cours, lire_section, chercher_cours) ──> corps LaTeX + \src{cID}
                                        │
                          latex.document() ──> .tex / .pdf     evaluate ──> score [0,1]
 ```
@@ -28,9 +28,11 @@ python -m pytest -q tests         # tests hors ligne (faux client)
   coupe jamais un énoncé ou un `align` en deux. Chaque chunk garde `source > section`.
 - **Recherche hybride** : BM25 maison (le vocabulaire mathématique est très discriminant,
   `\det`, « scindé ») + embeddings `mistral-embed`, fusion RRF. Sans embeddings, ça marche quand même.
-- **Agent vs RAG simple** : en mode `agent`, Mistral appelle `plan_du_cours` puis plusieurs
-  `chercher_cours` ciblées (définitions, théorèmes, méthodes) ; en mode `rag`, une seule
-  recherche. Le dernier tour force `tool_choice="none"` (borne de coût / latence).
+- **Agent vs RAG simple** : en mode `agent`, Mistral appelle `plan_du_cours`, puis
+  `lire_section` (chapitre entier, dans l'ordre : retrieval *par structure*) et/ou
+  `chercher_cours` (notion précise : retrieval *par similarité*) ; en mode `rag`, une seule
+  recherche. Au dernier tour (`ETAPES_MAX`, 8 par défaut) on force `tool_choice="none"` et une
+  consigne de rédaction ; si le modèle écrit malgré tout un appel d'outil en JSON, une relance.
 - **LaTeX robuste** : le modèle n'écrit que le corps, avec une liste fermée d'environnements ;
   le préambule est fixé par le code → beaucoup moins d'échecs de compilation.
 - **Traçabilité** : chaque énoncé porte `\src{c12}` → vérifiable, et mesurable.
