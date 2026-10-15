@@ -56,8 +56,16 @@ def _blocs_pdf(chemin: Path) -> List[Tuple[str, str]]:
     # pypdf avertit à chaque police Type1 sans fontTools : bruyant et sans conséquence ici.
     logging.getLogger("pypdf").setLevel(logging.ERROR)
 
-    lecteur = PdfReader(str(chemin))
-    return [(f"page {i + 1}", p.extract_text() or "") for i, p in enumerate(lecteur.pages)]
+    blocs = []
+    for i, page in enumerate(PdfReader(str(chemin)).pages):
+        texte = page.extract_text() or ""
+        # Mots coupés en fin de ligne (« gradi-\nents ») : on les recolle.
+        texte = re.sub(r"(\w)-\n(\w)", r"\1\2", texte)
+        # La 1re ligne est souvent l'en-tête courant (« 5.4. STOCHASTIC GRADIENT DESCENT 141 ») :
+        # on la garde dans le nom de section, plus parlant que « page 157 ».
+        entete = texte.strip().split("\n", 1)[0].strip()[:80]
+        blocs.append((f"p. {i + 1} – {entete}" if entete else f"p. {i + 1}", texte))
+    return blocs
 
 
 def _regrouper(texte: str, taille: int, recouvrement: int) -> Iterable[str]:
