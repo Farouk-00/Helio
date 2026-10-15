@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+
+os.environ["REQ_PAR_SEC"] = "0"  # pas de limiteur de débit avec les faux clients
 from types import SimpleNamespace as NS
 
 from ragmaths.agent import Agent
@@ -201,3 +204,33 @@ def test_lire_section():
     cli = FauxClient([_msg(appels=[("lire_section", {"section": "Diagonalisation"})]), _msg(content="\\section{D}")])
     res = Agent(INDEX, cli, modele="test").resumer("Résume la diagonalisation")
     assert res.requetes == ["[section] Diagonalisation"] and _id("Diagonalisation") in res.chunks_vus
+
+
+def test_reprise_sur_429_et_juge_robuste():
+    from ragmaths import llm
+    from ragmaths.juge import juger_enonce
+
+    class Err429(Exception):
+        status_code = 429
+
+    appels = []
+
+    def flaky(**kw):
+        appels.append(1)
+        if len(appels) < 3:
+            raise Err429("Rate limit exceeded")
+        return "ok"
+
+    attente = llm.time.sleep
+    llm.time.sleep = lambda s: None  # pas d'attente réelle dans le test
+    try:
+        assert llm.appeler(flaky) == "ok" and len(appels) == 3
+
+        def toujours_429(**kw):
+            raise Err429("Rate limit exceeded")
+
+        cli = NS(chat=NS(completions=NS(create=toujours_429)))
+        v = juger_enonce("\\begin{lemma}x\\end{lemma}", [INDEX.chunks[0].id], INDEX, cli, "juge")
+        assert v["verdict"] == "INVALIDE" and "429" not in v["verdict"] and "Err429" in v["probleme"]
+    finally:
+        llm.time.sleep = attente

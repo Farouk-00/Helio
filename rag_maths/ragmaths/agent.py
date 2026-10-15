@@ -13,7 +13,7 @@ from typing import Callable, Dict, List, Optional
 
 from .config import CONFIG
 from .latex import ENVS_AUTORISES, extraire_corps
-from .llm import texte
+from .llm import appeler, texte
 from .retriever import Index
 
 SYSTEME = f"""Tu es un assistant qui rédige des fiches de révision de mathématiques \
@@ -117,7 +117,7 @@ class Agent:
         self.modele = modele or CONFIG.modele
 
     def _appel(self, res: Resultat, **kw):
-        r = self.cli.chat.completions.create(model=self.modele, temperature=CONFIG.temperature, **kw)
+        r = appeler(self.cli.chat.completions.create, model=self.modele, temperature=CONFIG.temperature, **kw)
         if getattr(r, "usage", None):
             res.tokens_entree += r.usage.prompt_tokens or 0
             res.tokens_sortie += r.usage.completion_tokens or 0

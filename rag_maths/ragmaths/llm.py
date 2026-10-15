@@ -1,7 +1,10 @@
 """Client Mistral : API Mistral directe ou OpenRouter (toutes deux au format OpenAI)."""
 from __future__ import annotations
 
-from typing import List
+import random
+import threading
+import time
+from typing import Callable, List
 
 from .config import CONFIG
 
@@ -15,10 +18,47 @@ def client():
     return OpenAI(
         base_url=CONFIG.base_url,
         api_key=CONFIG.api_key,
-        max_retries=6,  # 429 (limite de débit) et erreurs réseau : nouvelles tentatives espacées
+        max_retries=0,  # les reprises sont gérées par `appeler` (attentes plus longues)
         # Nom de l'appli dans le tableau de bord OpenRouter (ignoré par Mistral).
         default_headers={"X-Title": "rag-maths"},
     )
+
+
+class _Limiteur:
+    """Espace les requêtes : au plus `REQ_PAR_SEC` par seconde, tous threads confondus.
+
+    Mistral limite le débit par espace de travail (requêtes/s), indépendamment des crédits.
+    """
+
+    def __init__(self) -> None:
+        self.verrou, self.prochain = threading.Lock(), 0.0
+
+    def attendre(self) -> None:
+        if CONFIG.req_par_sec <= 0:
+            return
+        with self.verrou:
+            maintenant = time.monotonic()
+            depart = max(maintenant, self.prochain)
+            self.prochain = depart + 1.0 / CONFIG.req_par_sec
+        time.sleep(max(0.0, depart - maintenant))
+
+
+LIMITEUR = _Limiteur()
+
+
+def appeler(fn: Callable, *args, tentatives: int = 8, **kwargs):
+    """Appel API limité en débit, avec reprises sur 429 / 5xx / réseau (attente exponentielle)."""
+    for essai in range(tentatives):
+        LIMITEUR.attendre()
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:  # openai.RateLimitError, APIConnectionError, InternalServerError…
+            code = getattr(e, "status_code", None)
+            reessayable = code in (429, 500, 502, 503, 504) or type(e).__name__ in (
+                "RateLimitError", "APIConnectionError", "APITimeoutError", "InternalServerError")
+            if not reessayable or essai == tentatives - 1:
+                raise
+            time.sleep(min(60.0, 2.0 ** essai) * (1 + random.random() / 2))
 
 
 def texte(contenu) -> str:
@@ -51,7 +91,7 @@ def embedder(cli=None):
     def embed(textes: List[str]) -> List[List[float]]:
         res = []
         for i in range(0, len(textes), 32):
-            r = cli.embeddings.create(model=CONFIG.modele_embedding, input=textes[i:i + 32])
+            r = appeler(cli.embeddings.create, model=CONFIG.modele_embedding, input=textes[i:i + 32])
             res.extend(d.embedding for d in r.data)
         return res
 

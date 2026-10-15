@@ -54,7 +54,10 @@ class Config:
     k: int = 6
     etapes_max: int = int(os.environ.get("ETAPES_MAX", 8))
     temperature: float = 0.2
-    # Appels au juge en parallèle (baisser à 1 si l'offre gratuite Mistral renvoie des 429).
+    # Débit max (requêtes/s, tous appels confondus ; 0 = illimité). Mistral limite le débit
+    # par espace de travail, indépendamment des crédits : voir console.mistral.ai > Limits.
+    req_par_sec: float = float(os.environ.get("REQ_PAR_SEC", 1 if FOURNISSEUR == "mistral" else 0))
+    # Appels au juge en parallèle (le limiteur de débit s'applique quand même).
     juge_paralleles: int = int(os.environ.get("JUGE_PARALLELES", 4))
 
 

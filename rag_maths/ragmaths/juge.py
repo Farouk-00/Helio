@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
-from .llm import texte
+from .llm import appeler, texte
 from .retriever import Index, tokeniser
 
 # Environnements contenant des énoncés vérifiables (noms français + alias anglais).
@@ -82,15 +82,19 @@ def _contexte(e: Enonce, index: Index, chunks_vus: List[str], max_chunks: int = 
 
 def juger_enonce(texte_enonce: str, ids: List[str], index: Index, cli, modele: str) -> Dict:
     extraits = "\n\n".join(f"[{i}] ({index.par_id[i].section})\n{index.par_id[i].texte}" for i in ids)
-    r = cli.chat.completions.create(
-        model=modele,
-        temperature=0,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": JUGE_ENONCE},
-            {"role": "user", "content": f"EXTRAITS :\n{extraits}\n\nÉNONCÉ :\n{texte_enonce}"},
-        ],
-    )
+    try:
+        r = appeler(
+            cli.chat.completions.create,
+            model=modele,
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": JUGE_ENONCE},
+                {"role": "user", "content": f"EXTRAITS :\n{extraits}\n\nÉNONCÉ :\n{texte_enonce}"},
+            ],
+        )
+    except Exception as e:  # un énoncé non jugé ne doit pas faire perdre tout le run
+        return {"verdict": "INVALIDE", "probleme": f"erreur API : {type(e).__name__}: {e}"[:300]}
     brut = texte(r.choices[0].message.content)
     m = re.search(r"\{.*\}", brut, re.S)
     try:
@@ -247,21 +251,25 @@ def tester_juge(corps: str, index: Index, cli, modele: str, n_par_type: int = 3,
 
     par_type: Dict[str, Dict] = {}
     for (nom, e, t), v in zip(mutations, v_mut):
-        d = par_type.setdefault(nom, {"injectees": 0, "detectees": 0, "non_soutenues": 0, "details": []})
+        d = par_type.setdefault(nom, {"injectees": 0, "detectees": 0, "non_soutenues": 0, "erreurs_api": 0,
+                                      "details": []})
+        if str(v.get("probleme", "")).startswith("erreur API"):
+            d["erreurs_api"] += 1  # non jugé : exclu du rappel
+            continue
         d["injectees"] += 1
         d["detectees"] += v["verdict"] == "ERREUR"
         d["non_soutenues"] += v["verdict"] in ("NON_SOUTENU", "INVALIDE")
         d["details"].append({"titre": e.titre, "verdict": v["verdict"], "probleme": v.get("probleme"),
                              "extrait_altere": _diff(e.texte, t)})
     for d in par_type.values():
-        d["rappel"] = d["detectees"] / d["injectees"]
+        d["rappel"] = d["detectees"] / d["injectees"] if d["injectees"] else 0.0
     n_mut = sum(d["injectees"] for d in par_type.values())
-    faux_positifs = [{"titre": e.titre, "probleme": v.get("probleme")}
-                     for e, v in zip(originaux, v_orig) if v["verdict"] == "ERREUR"]
+    juges = [(e, v) for e, v in zip(originaux, v_orig) if not str(v.get("probleme", "")).startswith("erreur API")]
+    faux_positifs = [{"titre": e.titre, "probleme": v.get("probleme")} for e, v in juges if v["verdict"] == "ERREUR"]
     return {
         "rappel_global": sum(d["detectees"] for d in par_type.values()) / n_mut if n_mut else None,
         "par_type": par_type,
-        "faux_positifs": len(faux_positifs) / len(originaux) if originaux else None,
+        "faux_positifs": len(faux_positifs) / len(juges) if juges else None,
         "faux_positifs_detail": faux_positifs,
         "n_enonces": len(enonces),
     }
@@ -283,7 +291,8 @@ def _diff(avant: str, apres: str, marge: int = 40) -> str:
 def tableau_test_juge(r: Dict) -> str:
     lignes = ["| erreur injectée | injectées | détectées | non soutenues | rappel |", "|---|---|---|---|---|"]
     for nom, d in r["par_type"].items():
-        lignes.append(f"| {nom} | {d['injectees']} | {d['detectees']} | {d['non_soutenues']} | {d['rappel']:.0%} |")
+        api = f" ({d['erreurs_api']} non jugées : erreur API)" if d["erreurs_api"] else ""
+        lignes.append(f"| {nom} | {d['injectees']} | {d['detectees']} | {d['non_soutenues']} | {d['rappel']:.0%}{api} |")
     if r["rappel_global"] is not None:
         lignes.append(f"| **total** | | | | **{r['rappel_global']:.0%}** |")
     if r["faux_positifs"] is not None:
