@@ -25,6 +25,26 @@ PREAMBULE = r"""\documentclass[11pt]{article}
 \newtheorem*{remarque}{Remarque}
 \newtheorem*{exemple}{Exemple}
 \newtheorem*{methode}{Méthode}
+% Alias anglais : le modèle les emploie souvent quand le cours est en anglais.
+\theoremstyle{definition}
+\newtheorem{defn}[definition]{Définition}
+\theoremstyle{plain}
+\newtheorem{theorem}[theoreme]{Théorème}
+\newtheorem{lemma}[lemme]{Lemme}
+\newtheorem{corollary}[corollaire]{Corollaire}
+\newtheorem{prop}[proposition]{Proposition}
+\theoremstyle{remark}
+\newtheorem*{remark}{Remarque}
+\newtheorem*{example}{Exemple}
+\newtheorem*{method}{Méthode}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator{\Tr}{Tr}
+\DeclareMathOperator{\rank}{rank}
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\Cov}{Cov}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
 \newcommand{\src}[1]{\textsuperscript{\tiny[#1]}}
 \newcommand{\R}{\mathbb{R}}
 \newcommand{\C}{\mathbb{C}}
