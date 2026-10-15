@@ -1,6 +1,6 @@
 # rag-maths : agent RAG qui résume des cours de maths en LaTeX
 
-Mistral (via OpenRouter) + recherche hybride BM25 / `mistral-embed` + boucle d'appels d'outils
+Mistral (API Mistral directe ou via OpenRouter, au choix dans `.env`) + recherche hybride BM25 / `mistral-embed` + boucle d'appels d'outils
 + sortie LaTeX compilable + jeu d'évaluation avec score composite. Python ≥ 3.9, ~600 lignes.
 
 ```
@@ -15,7 +15,7 @@ demande ──> Agent (Mistral, tools: plan_du_cours, chercher_cours) ──> co
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env              # clé OpenRouter
+cp .env.example .env              # FOURNISSEUR=mistral + MISTRAL_API_KEY (ou OpenRouter)
 # mettre ses cours dans cours/ (un exemple est fourni : réduction des endomorphismes)
 python -m ragmaths indexer
 python -m ragmaths resumer "Fiche de révision sur la diagonalisation" --sortie sorties/diag.tex

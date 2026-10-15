@@ -1,4 +1,4 @@
-"""Client OpenRouter (API compatible OpenAI) pointé sur les modèles Mistral."""
+"""Client Mistral : API Mistral directe ou OpenRouter (toutes deux au format OpenAI)."""
 from __future__ import annotations
 
 from typing import List
@@ -10,25 +10,26 @@ def client():
     from openai import OpenAI
 
     if not CONFIG.api_key:
-        raise RuntimeError("OPENROUTER_API_KEY manquante (voir .env.example).")
+        var = "MISTRAL_API_KEY" if CONFIG.fournisseur == "mistral" else "OPENROUTER_API_KEY"
+        raise RuntimeError(f"{var} manquante (voir .env.example).")
     return OpenAI(
         base_url=CONFIG.base_url,
         api_key=CONFIG.api_key,
-        # En-têtes facultatifs : l'appli apparaît dans le tableau de bord OpenRouter.
+        # Nom de l'appli dans le tableau de bord OpenRouter (ignoré par Mistral).
         default_headers={"X-Title": "rag-maths"},
     )
 
 
 def embedder(cli=None):
     """Renvoie une fonction textes -> vecteurs, ou None si aucun modèle d'embedding."""
-    if not CONFIG.modele_embedding:
-        return None
+    if not CONFIG.modele_embedding or not CONFIG.api_key:
+        return None  # pas de clé (ou désactivé) : BM25 seul
     cli = cli or client()
 
     def embed(textes: List[str]) -> List[List[float]]:
         res = []
-        for i in range(0, len(textes), 64):
-            r = cli.embeddings.create(model=CONFIG.modele_embedding, input=textes[i:i + 64])
+        for i in range(0, len(textes), 32):
+            r = cli.embeddings.create(model=CONFIG.modele_embedding, input=textes[i:i + 32])
             res.extend(d.embedding for d in r.data)
         return res
 
